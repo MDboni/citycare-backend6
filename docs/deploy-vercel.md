@@ -161,6 +161,7 @@ Finally, **Settings → Cron Jobs** must list both entries with a next run time.
 | `Cannot find module '../dist/app.js'` | the build command did not run, or `includeFiles` was edited | check the build log for `tsc`; keep `"includeFiles": "{dist,docs}/**"` |
 | `Cannot find module '.prisma/client'`, or a missing `.wasm` | the generated client was not traced into the bundle | widen `includeFiles` to `"{dist,docs,node_modules/.prisma,node_modules/@prisma}/**"` |
 | `/api/v1/docs` 404s | `docs/openapi.yaml` was not uploaded | it must not be in `.vercelignore`, and `includeFiles` must cover `docs/` |
+| `ERR_REQUIRE_ESM` from `sanitize-html` | it reached a version whose `htmlparser2` is ESM-only | `sanitize-html` is pinned to `2.17.5` on purpose — see below. Do not raise it |
 | `Stream isn't writeable` | a Redis command ran before the socket was up | the `ready ??= connectRedis()` line in `api/index.ts` is missing or not awaited |
 | Every path 404s | the rewrite is gone or malformed | `"rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]` |
 | `FUNCTION_INVOCATION_TIMEOUT` on the CSV export | the default duration is too short | `maxDuration` in `vercel.json`, up to 60 on Hobby |
@@ -171,6 +172,33 @@ Finally, **Settings → Cron Jobs** must list both entries with a next run time.
 
 A 500 with no detail: **Deployments → the deployment → Runtime Logs**. Every response carries a
 `requestId`, and the same id is on every log line for that request — search the log for it.
+
+---
+
+## Why `sanitize-html` is pinned
+
+`package.json` pins `sanitize-html` to exactly `2.17.5`, with no caret. That is deliberate and
+the deployment stops working without it.
+
+From `2.17.6` the package depends on `htmlparser2@^12`, which ships as ESM only — its
+`exports` map has no `require` condition at all. `sanitize-html` itself is CommonJS and calls
+`require("htmlparser2")`, so the two cannot be loaded together anywhere `require()` of an ESM
+module is unavailable. Node 22.12 and later allow it, which is why this never showed up in
+development; the serverless bundle does not, and every request died at import with
+`ERR_REQUIRE_ESM` before a single line of this project's code ran.
+
+`2.17.5` depends on `htmlparser2@^10`, which publishes a real CommonJS build. The only API this
+project uses is `sanitizeHtml(value, { allowedTags: [], allowedAttributes: {} })`, unchanged
+since v1, so nothing is given up by staying there.
+
+To check the pin still holds after any dependency change:
+
+```bash
+node --no-experimental-require-module -e "require('sanitize-html')"
+```
+
+That flag turns off Node's `require(ESM)` support, which reproduces the serverless runtime. It
+must exit silently.
 
 ---
 

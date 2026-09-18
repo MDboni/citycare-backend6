@@ -5,6 +5,8 @@ are captured as you go, every request checks its own status code, and nothing ne
 by hand.
 
 - Collection: [`docs/api/citycare.postman_collection.json`](api/citycare.postman_collection.json) — 100 requests, 10 numbered folders
+- Environment, local: [`citycare.postman_environment.json`](api/citycare.postman_environment.json) — points at `http://localhost:5000`
+- Environment, deployed: [`citycare.postman_environment.production.json`](api/citycare.postman_environment.production.json) — the same 46 variables pointed at the Vercel deployment. Import it and pick it from the environment selector; nothing else changes
 - Environment: [`docs/api/citycare.postman_environment.json`](api/citycare.postman_environment.json) — 46 variables
 - The same surface is browsable at `http://localhost:5000/api/v1/docs` (Swagger UI) and in
   [`docs/openapi.yaml`](openapi.yaml)

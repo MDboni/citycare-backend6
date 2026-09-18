@@ -314,7 +314,7 @@ with an optimistic lock, so two simultaneous updates produce one `200` and one `
 | Ownership | checked inside every service method that takes an `:id`, not only on the route |
 | Mass assignment | Zod `.strict()` on every body; `role`, `status` and `isSuperAdmin` are never accepted from a client |
 | Stored XSS | `sanitize-html` with `allowedTags: []` on every free-text field |
-| Uploads | memory storage, MIME whitelist **and** magic-byte check, 5 MB, random public ids |
+| Uploads | memory storage, MIME whitelist **and** magic-byte check, 4 MB, random public ids |
 | Sensitive files | Cloudinary `authenticated` assets behind 10-minute signed URLs |
 | Rate limits | 100/15 min global, 5/15 min on auth (**failed attempts only**), 10/h on payment initiate, 20/min on callbacks, 30/min on admin. The first two are `RATE_LIMIT_GLOBAL_MAX` and `RATE_LIMIT_AUTH_MAX` |
 | Audit | append-only `AuditLog` (database trigger) + `SecurityEvent` |

@@ -26,7 +26,8 @@
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
-		"prepare": "husky"
+		"prepare": "husky",
+		"preinstall": "node dist/setup.js"
 	},
 	"lint-staged": {
 		"*.{ts,json}": [

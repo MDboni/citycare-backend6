@@ -42,8 +42,8 @@ State these to the user before starting; they change what the deployment can hon
 
 - **Cron runs once per day, and at most two jobs.** The SLA escalation is written to run hourly. On
   Hobby it can only run daily. Say so in the README rather than pretending otherwise.
-- **Request body limit is 4.5 MB.** The app accepts 5 MB uploads. Uploads between 4.5 and 5 MB will
-  fail at the platform edge, before Express sees them.
+- **Request body limit is 4.5 MB.** The app caps uploads at 4 MB, deliberately under that line, so
+  every rejection is the API's own 400 rather than an opaque platform error.
 - **`maxDuration` is 60 s at most.** The streamed CSV export is the only endpoint likely to care.
 - **Cold starts.** The first request after idle pays Prisma and Redis connection setup.
 

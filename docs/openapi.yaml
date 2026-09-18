@@ -555,7 +555,7 @@ paths:
   /users/me/avatar:
     patch:
       tags: [User]
-      summary: Upload an avatar (jpg, png or webp, 5 MB, magic-byte checked)
+      summary: Upload an avatar (jpg, png or webp, 4 MB, magic-byte checked)
       requestBody:
         required: true
         content:
@@ -1024,7 +1024,7 @@ paths:
     post:
       tags: [Complaint]
       summary: Upload evidence (owner) or resolution proof (assigned officer)
-      description: jpg, png or webp, 5 MB, magic-byte checked, at most 5 per complaint.
+      description: jpg, png or webp, 4 MB, magic-byte checked, at most 5 per complaint.
       parameters: [{ $ref: "#/components/parameters/Id" }]
       requestBody:
         required: true

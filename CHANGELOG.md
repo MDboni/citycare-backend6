@@ -81,6 +81,10 @@ First complete build of the CityCare backend.
 
 ### Changed
 
+- Uploads are capped at 4 MB rather than 5. Serverless hosts cut a request body off at 4.5 MB, and
+  a file stopped at the platform edge never reaches the middleware — the caller gets an opaque
+  platform error instead of this API's `413 File too large`. Staying under that line keeps every
+  rejection ours to explain.
 - `authLimiter` counts **failed** attempts only. What it defends against is guessing, and a
   successful login is not a guess — counting it locked out the one person who typed the right
   password while a bot that fails every time got the same five tries either way.

@@ -121,7 +121,7 @@ request description explains when you get which.
 | `adminToken`, `officerToken`, `citizenToken` | any login, routed by the role in the response |
 | `refreshToken`, `userId` | any login; refresh also rewrites `citizenToken` |
 | `challengeId` | a `202` two-factor response |
-| `otp` | **you type this in** — from the email, or the dev server log |
+| `otp` | **you type this in** — `pnpm run otp` prints it (see §7) |
 | `signupBaseEmail` | **you set this** — your own address, so signup OTPs reach a real inbox (see §7) |
 | `signupEmail` | a pre-request script, fresh on every send |
 | `departmentId`, `categoryId`, `wardId`, `zoneId`, `serviceTypeId` | the Master data list requests — **seeded** rows, for reading |
@@ -254,15 +254,38 @@ const devOtpHint = (to, otp, kind) => {
 };
 ```
 
-That leaves two ways to test the OTP flows, and you have to pick one:
+That leaves three ways to test the OTP flows. **A works in every case** and needs no configuration
+change:
 
 | | What to do | What happens |
 | --- | --- | --- |
-| **A — read it from the terminal** | comment out `SMTP_USER` and `SMTP_PASS` in `.env`, restart | every OTP is printed in the server log. Simplest for a walkthrough, and the only way to log in as `citizen2@citycare.com`, whose address nobody owns |
-| **B — receive a real email** | leave SMTP on, and put your own address in the `signupBaseEmail` variable | the signup script turns `you@gmail.com` into `you+cc481902@gmail.com` — a new account every run, all landing in your one inbox |
+| **A — ask the server** | `pnpm run otp` in a second terminal | prints every OTP currently pending, signup and login alike, with how long it has left. Works with SMTP on or off |
+| **B — read it from the log** | comment out `SMTP_USER` and `SMTP_PASS` in `.env`, restart | every OTP is printed in the server log as it is issued |
+| **C — receive a real email** | leave SMTP on, put your own address in the `signupBaseEmail` variable | the signup script turns `you@gmail.com` into `you+cc481902@gmail.com` — a new account every run, all in your one inbox. Signup only |
 
-Option B covers signup only. The seeded `citizen2…citizen5@citycare.com` are not real addresses, so
-their two-factor login needs option A.
+Option C cannot help with `citizen2…citizen5@citycare.com`, because nobody owns those addresses.
+Option A can.
+
+```
+$ pnpm run otp
+
+SIGNUP   otptest.1789708510612@example.com
+  OTP      451973
+  expires  in 583s        attempts used: 0/5
+
+LOGIN    citizen2@citycare.com (CITIZEN)
+  OTP          749797
+  challengeId  ce7962659e04438be3ce044d12ce6398707779b9c4b150848a18df6c750c2e23
+  expires      in 286s        attempts used: 0/5
+```
+
+`pnpm run otp citizen2` narrows it to one account.
+
+**Where the code comes from.** Redis never holds the six digits. `reg:pending:*` and `login:otp:*`
+store `otpHash = HMAC-SHA256(otp, OTP_SECRET)`, so a leaked Redis dump is worth nothing on its own.
+There are only 900,000 possible codes, though, so *with* the secret the original is recovered by
+trying them all — which is what this script does, in about a second. That is exactly why the hash is
+keyed rather than a plain SHA-256, and why the script refuses to run with `NODE_ENV=production`.
 
 ### Then
 
@@ -412,7 +435,7 @@ or staff may ask for one. All three need Cloudinary credentials; without them th
 | `409 INVALID_TRANSITION` | wrong step or wrong role | check the table in §5 |
 | `409` on `RESOLVED` | no resolution proof | upload an attachment with `kind: RESOLUTION_PROOF` first |
 | `503` on payment or upload | SSLCommerz / Cloudinary keys missing | fill them in `.env` and restart |
-| No OTP arrives, and nothing in the log | SMTP **is** configured, so the OTP was emailed to an address nobody owns | see §7 — either turn SMTP off, or set `signupBaseEmail` |
+| No OTP arrives, and nothing in the log | SMTP **is** configured, so the OTP was emailed — and for the seeded accounts, to an address nobody owns | run `pnpm run otp` |
 | A `⚠` request logged you out | that is what it does | re-run folder 01 |
 
 ---

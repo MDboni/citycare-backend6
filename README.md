@@ -93,6 +93,7 @@ OTP `111111`.
 | `pnpm run db:deploy` | Apply migrations (production) |
 | `pnpm run db:seed` | Idempotent seed |
 | `pnpm run db:studio` | Prisma Studio |
+| `pnpm run otp` | Development only — prints the OTP currently pending in Redis, for when SMTP is on or the address is not real |
 | `pnpm test` / `test:coverage` | Vitest |
 
 ---

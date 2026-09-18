@@ -37,6 +37,14 @@ authRoutes.post(
 	validateRequest(V.resendLoginOtpSchema),
 	AuthController.resendLoginOtp,
 );
+// The link from the same email. GET, because a mail client will only ever
+// follow one — which is also why it is rate limited and single use.
+authRoutes.get(
+	"/login/magic",
+	authLimiter,
+	validateRequest(V.magicLoginSchema),
+	AuthController.magicLogin,
+);
 
 // --- tokens and sessions ---------------------------------------------------
 authRoutes.post("/refresh-token", validateRequest(V.refreshSchema), AuthController.refreshToken);

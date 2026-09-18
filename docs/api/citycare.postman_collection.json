@@ -591,7 +591,58 @@
           ]
         },
         {
-          "name": "06. Resend the login OTP",
+          "name": "06. Sign in from the emailed link",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login/magic?token={{magicToken}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login",
+                "magic"
+              ],
+              "query": [
+                {
+                  "key": "token",
+                  "value": "{{magicToken}}",
+                  "description": "The 64-character token from the link in the login code email."
+                }
+              ]
+            },
+            "description": "The one-click half of the same challenge request 05 completes with a code.\n\nThe login code email carries a **Sign in to CityCare** button. Open the link in a browser and you are signed in — the response is the same envelope with the tokens in it. To try it here instead, copy the token out of that link into the {{magicToken}} variable.\n\nIt is valid for as long as the challenge (5 minutes) and works **once**. Using it ends the challenge, so the emailed code stops working too — and if you use the code first, this link stops working. Unlike the code path it is not tied to the browser that started the login, because a link is opened in a mail client; that is why it is short-lived, single use and never issues a trusted device."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200 or 400\", function () {",
+                  "  pm.expect([200, 400]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test(\"Standard response envelope\", function () {",
+                  "  pm.expect(pm.response.json()).to.have.property(\"success\");",
+                  "});",
+                  "",
+                  "const d = pm.response.json().data;",
+                  "if (d && d.accessToken) {",
+                  "  const role = (d.user && d.user.role) || \"CITIZEN\";",
+                  "  const slot = role === \"ADMIN\" ? \"adminToken\" : role === \"OFFICER\" ? \"officerToken\" : \"citizenToken\";",
+                  "  pm.environment.set(slot, d.accessToken);",
+                  "  if (d.refreshToken) pm.environment.set(\"refreshToken\", d.refreshToken);",
+                  "  console.log(\"saved \" + slot + \" for \" + role + \" — signed in from the emailed link\");",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07. Resend the login OTP",
           "request": {
             "method": "POST",
             "header": [
@@ -641,7 +692,7 @@
           ]
         },
         {
-          "name": "07. List your active sessions",
+          "name": "08. List your active sessions",
           "request": {
             "method": "GET",
             "header": [
@@ -685,7 +736,7 @@
           ]
         },
         {
-          "name": "08. Rotate the refresh token",
+          "name": "09. Rotate the refresh token",
           "request": {
             "method": "POST",
             "header": [
@@ -737,7 +788,7 @@
           ]
         },
         {
-          "name": "09. Turn two-factor on or off — citizens only",
+          "name": "10. Turn two-factor on or off — citizens only",
           "request": {
             "method": "PATCH",
             "header": [
@@ -791,7 +842,7 @@
           ]
         },
         {
-          "name": "10. Email a reset link",
+          "name": "11. Email a reset link",
           "request": {
             "method": "POST",
             "header": [
@@ -840,7 +891,7 @@
           ]
         },
         {
-          "name": "11. Set a new password and revoke every session",
+          "name": "12. Set a new password and revoke every session",
           "request": {
             "method": "POST",
             "header": [
@@ -889,7 +940,7 @@
           ]
         },
         {
-          "name": "12. Google — redirect to the consent screen",
+          "name": "13. Google — redirect to the consent screen",
           "request": {
             "method": "GET",
             "header": [],
@@ -907,7 +958,7 @@
           }
         },
         {
-          "name": "13. Google — callback",
+          "name": "14. Google — callback",
           "request": {
             "method": "GET",
             "header": [],
@@ -926,7 +977,7 @@
           }
         },
         {
-          "name": "14. Google — sign in with an id token",
+          "name": "15. Google — sign in with an id token",
           "request": {
             "method": "POST",
             "header": [
@@ -976,7 +1027,7 @@
           ]
         },
         {
-          "name": "15. ⚠ Change your password — revokes every session",
+          "name": "16. ⚠ Change your password — revokes every session",
           "request": {
             "method": "PATCH",
             "header": [
@@ -1030,7 +1081,7 @@
           ]
         },
         {
-          "name": "16. ⚠ Revoke one of your own sessions",
+          "name": "17. ⚠ Revoke one of your own sessions",
           "request": {
             "method": "DELETE",
             "header": [
@@ -1077,7 +1128,7 @@
           ]
         },
         {
-          "name": "17. ⚠ Log out — denylists the current access token",
+          "name": "18. ⚠ Log out — denylists the current access token",
           "request": {
             "method": "POST",
             "header": [
@@ -1117,7 +1168,7 @@
           ]
         },
         {
-          "name": "18. ⚠ Revoke every session of this user",
+          "name": "19. ⚠ Revoke every session of this user",
           "request": {
             "method": "POST",
             "header": [

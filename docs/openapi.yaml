@@ -342,6 +342,28 @@ paths:
         "202": { $ref: "#/components/responses/Ok" }
         "429": { $ref: "#/components/responses/TooMany" }
 
+  /auth/login/magic:
+    get:
+      tags: [Auth]
+      summary: Complete the two-factor challenge from the emailed link
+      security: []
+      description: >
+        The one-click half of the same challenge the OTP belongs to. The link is sent in the login
+        code email; the token is 32 random bytes, stored only as a SHA-256, valid for as long as the
+        challenge (5 minutes) and usable once. Using it ends the challenge, so the emailed code stops
+        working too, and the reverse is also true. Unlike the OTP path this one is not bound to the
+        browser that started the login, because the link is opened in a mail client. It never issues
+        a trusted device.
+      parameters:
+        - in: query
+          name: token
+          required: true
+          schema: { type: string, pattern: "^[a-f0-9]{64}$" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooMany" }
+
   /auth/refresh-token:
     post:
       tags: [Auth]

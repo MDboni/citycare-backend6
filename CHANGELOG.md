@@ -30,6 +30,11 @@ First complete build of the CityCare backend.
 
 **Auth**
 - Redis-first signup: nothing reaches PostgreSQL before the emailed OTP is verified.
+- A two-factor challenge can be completed two ways: type the six digits, or open the sign-in link
+  in the same email (`GET /auth/login/magic`). They are two doors into one challenge, not two
+  credentials — whichever is used first ends it, a resend replaces both, and the link is 32 random
+  bytes stored only as a SHA-256, valid five minutes, usable once, and never issues a trusted
+  device.
 - Login with a second factor, on by default for every account, opt-out for citizens only, and
   trusted devices. The seed leaves it off on the demo accounts so they can be evaluated without
   a mailbox.

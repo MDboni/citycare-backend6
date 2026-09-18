@@ -4,8 +4,8 @@ Import two files, pick the environment, and click down the folders from 01 to 10
 are captured as you go, every request checks its own status code, and nothing needs to be copied
 by hand.
 
-- Collection: [`docs/api/citycare.postman_collection.json`](api/citycare.postman_collection.json) — 99 requests, 10 numbered folders
-- Environment: [`docs/api/citycare.postman_environment.json`](api/citycare.postman_environment.json) — 45 variables
+- Collection: [`docs/api/citycare.postman_collection.json`](api/citycare.postman_collection.json) — 100 requests, 10 numbered folders
+- Environment: [`docs/api/citycare.postman_environment.json`](api/citycare.postman_environment.json) — 46 variables
 - The same surface is browsable at `http://localhost:5000/api/v1/docs` (Swagger UI) and in
   [`docs/openapi.yaml`](openapi.yaml)
 
@@ -87,7 +87,7 @@ admin and you get `403 FORBIDDEN_ROLE`.
 | Folder | What is in it | Needs |
 | --- | --- | --- |
 | **01 — Setup** | health, readiness, the three logins | run this first, always |
-| **02 — Auth** | signup, OTP, 2FA, sessions, refresh, Google, password reset | 01 |
+| **02 — Auth** | signup, OTP, the emailed sign-in link, 2FA, sessions, refresh, Google, password reset | 01 |
 | **03 — User** | profile, avatar, export, delete | 01 |
 | **04 — Master data** | Departments · Categories · Zones and wards · Service types | 01 |
 | **05 — Complaint** | Create and browse · Lifecycle · Attachments and comments · Reactions and feedback | 01, 04 |
@@ -121,6 +121,7 @@ request description explains when you get which.
 | `adminToken`, `officerToken`, `citizenToken` | any login, routed by the role in the response |
 | `refreshToken`, `userId` | any login; refresh also rewrites `citizenToken` |
 | `challengeId` | a `202` two-factor response |
+| `magicToken` | **you paste this** — the `token=` value from the sign-in link in the email |
 | `otp` | **you type this in** — `pnpm run otp` prints it (see §7) |
 | `signupBaseEmail` | **you set this** — your own address, so signup OTPs reach a real inbox (see §7) |
 | `signupEmail` | a pre-request script, fresh on every send |
@@ -304,6 +305,27 @@ Two-factor on login works the same way: change the login body to `citizen2@cityc
 get `202 { twoFactorRequired: true, challengeId }`. The script saves `challengeId`; put the OTP in
 `otp` and send **05. Complete the two-factor challenge**. Set `"trustDevice": true` and the
 response includes a `deviceToken` that skips the OTP next time — citizens only.
+
+### The link in the same email
+
+That email carries a **Sign in to CityCare** button as well as the six digits. Clicking it in a
+browser signs you in and shows the usual envelope with the tokens in it; there is no frontend to
+hand them to, and a redirect would leave them in the history of a machine we know nothing about.
+To try it from Postman instead, copy the `token=` value out of the link into `magicToken` and send
+**06. Sign in from the emailed link**.
+
+They are two doors into one challenge, not two credentials:
+
+| Do this | Then this happens |
+| --- | --- |
+| Open the link | signed in; **05** now answers `400`, the code is dead |
+| Use the code | signed in; the link now answers `400` |
+| Open the link twice | the second click is `400` — single use |
+| Resend the code (**07**) | the previous email's link stops working too |
+
+The link is the one path that is **not** tied to the browser that started the login — it is opened
+in a mail client, so binding it would mean it never works. That is why it lasts five minutes, works
+once, is rate limited, raises the new-device alert, and never issues a trusted device.
 
 ### Things to check in this folder
 

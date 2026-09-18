@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { env } from "@/config/env.js";
 import { requireUser } from "@/middlewares/auth.js";
-import { validatedParams } from "@/middlewares/validateRequest.js";
+import { validatedParams, validatedQuery } from "@/middlewares/validateRequest.js";
 import * as AuthService from "@/modules/auth/auth.service.js";
 import { ApiError } from "@/utils/ApiError.js";
 import { catchAsync } from "@/utils/catchAsync.js";
@@ -63,6 +63,18 @@ export const verifyLoginOtp = catchAsync(async (req: Request, res: Response) => 
 export const resendLoginOtp = catchAsync(async (req: Request, res: Response) => {
 	const data = await AuthService.resendLoginOtp(req.body.challengeId, toCtx(req));
 	sendResponse(res, { statusCode: 202, message: "Verification code sent", data });
+});
+
+/**
+ * Opened from a mail client, so the answer has to make sense in a browser tab.
+ * It is the same JSON envelope as everywhere else: there is no frontend to hand
+ * the tokens to, and putting them in a redirect URL would leave them in the
+ * browser history of a machine we know nothing about.
+ */
+export const magicLogin = catchAsync(async (req: Request, res: Response) => {
+	const { token } = validatedQuery<{ token: string }>(req);
+	const data = await AuthService.completeMagicLogin(token, toCtx(req));
+	sendResponse(res, { message: "Logged in successfully", data });
 });
 
 export const refreshToken = catchAsync(async (req: Request, res: Response) => {

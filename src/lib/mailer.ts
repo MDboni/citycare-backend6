@@ -115,13 +115,36 @@ export const sendOtpEmail = async (to: string, otp: string, minutes = 10): Promi
 	);
 };
 
-export const sendLoginOtpEmail = async (to: string, otp: string, minutes = 5): Promise<void> => {
+/** The one-click half of the same challenge — the code below it still works. */
+const magicBlock = (link: string, minutes: number) => `
+  <p style="margin:24px 0 12px;color:#6b7280;font-size:14px">Or sign in without typing it:</p>
+  <p style="margin:0 0 16px">
+    <a href="${link}" style="display:inline-block;background:#0b6bcb;color:#fff;text-decoration:none;
+       padding:12px 24px;border-radius:8px;font-weight:600;font-size:15px">Sign in to CityCare</a>
+  </p>
+  <p style="margin:0;color:#9ca3af;font-size:12px">
+    This link works once and expires in ${minutes} minutes. Do not forward this email — anyone who
+    opens the link is signed in as you.
+  </p>`;
+
+export const sendLoginOtpEmail = async (
+	to: string,
+	otp: string,
+	minutes = 5,
+	magicLink?: string,
+): Promise<void> => {
 	devOtpHint(to, otp, "login");
+	if (magicLink && !isProd && !smtpConfigured) {
+		logger.warn(`[dev only] magic login link for ${to}: ${magicLink}`);
+	}
 	await send(
 		to,
 		"OTP_LOGIN",
 		"Your CityCare login code",
-		layout("Two-factor verification", otpBlock(otp, minutes)),
+		layout(
+			"Two-factor verification",
+			otpBlock(otp, minutes) + (magicLink ? magicBlock(magicLink, minutes) : ""),
+		),
 	);
 };
 

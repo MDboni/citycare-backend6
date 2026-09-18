@@ -71,7 +71,8 @@ officer and admin created through the API gets it **on**, and `PATCH /auth/2fa` 
 it off for any role but `CITIZEN` — so a privileged account can never downgrade itself to a
 single factor. Only the seed script can hand out an OTP-free staff account.
 
-Accounts that do need a code (citizen2–5, and any real staff account) email it, so set
+Accounts that do need a code (citizen2–5, and any real staff account) get an email carrying both
+the six digits and a one-click sign-in link — either one completes the same challenge. Set
 `SMTP_USER` and `SMTP_PASS`. Without SMTP configured in development the OTP is printed to the
 server log instead — never in production.
 
@@ -267,7 +268,7 @@ copy-pasting.
 
 | Group | Endpoints |
 | --- | --- |
-| Auth | register, verify-otp, resend-otp, login, login/verify-otp, login/resend-otp, refresh-token, logout, logout-all, sessions, 2fa, google, google/callback, google/token, forgot/reset/change password |
+| Auth | register, verify-otp, resend-otp, login, login/verify-otp, login/resend-otp, login/magic, refresh-token, logout, logout-all, sessions, 2fa, google, google/callback, google/token, forgot/reset/change password |
 | User | `/users/me` (get, patch, delete), `/users/me/avatar`, `/users/me/export` |
 | Master data | departments, categories, wards, zones, service-types |
 | Complaint | create, list, my, my-assigned, search, nearby, track, get, update, delete, status, assign, cancel, reopen, history, attachments, comments, upvote, feedback |
@@ -304,7 +305,7 @@ with an optimistic lock, so two simultaneous updates produce one `200` and one `
 | --- | --- |
 | No account in Postgres before the email is verified | pending signups live in Redis for 10 min |
 | Passwords | bcrypt 12 rounds, min 10 chars with upper/lower/digit/symbol, must not contain the name or email |
-| Two-factor | on by default; only a CITIZEN may turn it off, and only with their password plus a fresh OTP |
+| Two-factor | on by default; the emailed code and a one-click sign-in link are two ways through the same challenge; only a CITIZEN may turn it off, and only with their password plus a fresh OTP |
 | Lockout | 5 failures → 15 min, next 5 → 1 h, plus a per-IP counter |
 | Enumeration | one message and one timing for login, forgot-password and resend-otp (dummy bcrypt compare) |
 | Access tokens | HS256 only, issuer + audience pinned, `jti` denylisted on logout, session checked on every request |

@@ -55,20 +55,41 @@ POST /auth/login
   ├─ !mustOtp || trusted → 200 { twoFactorRequired: false, accessToken, refreshToken, user }
   └─ otherwise
         challengeId = 32 random bytes
+        magicToken  = 32 random bytes            ← only ever exists in the email
         SET login:otp:{challengeId} EX 300
-            { userId, otpHash, attempts, resends, ipHash, uaHash }
-        email the OTP, SecurityEvent OTP_SENT
+            { userId, otpHash, attempts, resends, ipHash, uaHash, magicHash }
+        SET login:magic:{sha256(magicToken)} = challengeId EX 300
+        email the OTP *and* a sign-in link, SecurityEvent OTP_SENT
         → 202 { twoFactorRequired: true, challengeId, email: masked, expiresInSec }
 
 POST /auth/login/verify-otp
   ├─ missing challenge                        → 400 OTP_EXPIRED
   ├─ uaHash mismatch                          → DEL + 401 (challenge belongs to one browser)
-  ├─ wrong OTP  → attempts++, 5 → DEL, SecurityEvent OTP_FAILED, 400 OTP_INVALID
+  ├─ wrong OTP  → attempts++, 5 → end challenge, SecurityEvent OTP_FAILED, 400 OTP_INVALID
   ├─ DEL returns 0 (someone else used it)     → 400 "OTP already used"
   └─ createSessionAndTokens
         CITIZEN + trustDevice → TrustedDevice (30 d) + deviceToken in the response
         unknown user agent    → SecurityEvent NEW_DEVICE + alert email
+
+GET /auth/login/magic?token=…                  ← the same challenge, one click
+  ├─ authLimiter, token must be 64 hex
+  ├─ GET login:magic:{sha256(token)} → challengeId; missing → 400
+  ├─ GET login:otp:{challengeId};      missing → 400 (the code already used it)
+  ├─ DEL the magic key; returns 0 → 400        (single use, race safe)
+  ├─ end the challenge, so the emailed code dies with it
+  └─ createSessionAndTokens — never a trusted device
 ```
+
+**The two halves of one challenge.** The code and the link are two ways through the *same*
+`challengeId`, never two credentials: whichever is used first ends the challenge and takes the other
+down with it, and a resend replaces both. `magicHash` on the challenge record is what makes that
+possible in either direction.
+
+The link is the one path that does **not** check the user agent. `verify-otp` refuses a challenge
+presented by a different browser, but a link is opened in a mail client, never in the app that
+started the login — binding it would mean the feature never works. That is the trade, and it is why
+this path is short-lived, single use, rate limited, alerted on a new device, and never mints a
+trusted device: a click cannot tell us the person meant to trust the machine they clicked on.
 
 The dummy bcrypt compare matters: without it, an unknown email would answer measurably faster
 than a wrong password and the endpoint would become an account-existence oracle.
@@ -146,6 +167,7 @@ An unknown address gets the identical `200`. `reset-password` re-checks the poli
 | `login:fail:{email}` | consecutive failures | 15 min → 1 h |
 | `login:ip:{ip}` | failures from this IP | 15 min |
 | `login:otp:{challengeId}` | 2FA challenge | 5 min |
+| `login:magic:{tokenHash}` | the emailed link, pointing at a challengeId | 5 min |
 | `pwd:reset:{tokenHash}` | user id | 15 min |
 | `jwt:deny:{jti}` | logout denylist | remaining token life |
 | `sess:{sid}` | session validity cache | 60 s |

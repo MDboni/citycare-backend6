@@ -53,6 +53,8 @@ type LoginChallenge = {
 	resends: number;
 	ipHash: string;
 	uaHash: string;
+	/** So whoever ends the challenge can take the emailed link down with it. */
+	magicHash?: string;
 };
 
 export type PublicUser = {
@@ -165,6 +167,33 @@ export const createTrustedDevice = async (userId: string, ua: string): Promise<s
 		},
 	});
 	return token;
+};
+
+/**
+ * Mints the one-click half of a two-factor challenge and writes the pointer
+ * into `challenge.magicHash`, so ending the challenge any other way can take
+ * this link down too. Mutates `challenge`; the caller persists it.
+ */
+const issueMagicLink = async (
+	challenge: LoginChallenge,
+	challengeId: string,
+	ttl: number,
+): Promise<string> => {
+	if (challenge.magicHash) await redis.del(KEYS.loginMagic(challenge.magicHash)).catch(() => {});
+
+	const token = randomToken(32);
+	challenge.magicHash = sha256(token);
+	await requireRedis(() =>
+		redis.set(KEYS.loginMagic(challenge.magicHash as string), challengeId, "EX", ttl),
+	);
+
+	return `${env.BACKEND_URL}/api/v1/auth/login/magic?token=${token}`;
+};
+
+/** Ends a challenge: the code and the emailed link both stop working. */
+const endChallenge = async (challengeId: string, challenge: LoginChallenge): Promise<number> => {
+	if (challenge.magicHash) await redis.del(KEYS.loginMagic(challenge.magicHash)).catch(() => {});
+	return redis.del(KEYS.loginOtp(challengeId));
 };
 
 /** "New" = this user has never signed in from this user agent before. */
@@ -476,10 +505,15 @@ export const login = async (
 		uaHash: sha256(ctx.ua),
 	};
 
+	// The same challenge, reachable two ways: type the code, or open the link.
+	// The link is a second pointer at `challengeId`, never a second credential —
+	// whichever one is used first ends the challenge and kills the other.
+	const magicLink = await issueMagicLink(challenge, challengeId, ttl);
 	await requireRedis(() =>
 		redis.set(KEYS.loginOtp(challengeId), JSON.stringify(challenge), "EX", ttl),
 	);
-	await sendLoginOtpEmail(user.email, otp, Math.round(ttl / 60));
+
+	await sendLoginOtpEmail(user.email, otp, Math.round(ttl / 60), magicLink);
 	await logSecurity({ userId: user.id, type: "OTP_SENT", ctx });
 	otpCounter.inc({ kind: "login", outcome: "sent" });
 
@@ -518,15 +552,16 @@ export const verifyLoginOtp = async (
 
 	if (!safeEqual(otpHash(otp), challenge.otpHash)) {
 		challenge.attempts += 1;
-		if (challenge.attempts >= LIMITS.loginOtpAttempts) await redis.del(key);
+		if (challenge.attempts >= LIMITS.loginOtpAttempts) await endChallenge(challengeId, challenge);
 		else await redis.set(key, JSON.stringify(challenge), "KEEPTTL");
 		await logSecurity({ userId: challenge.userId, type: "OTP_FAILED", ctx });
 		otpCounter.inc({ kind: "login", outcome: "failed" });
 		throw new ApiError(400, "Invalid OTP", [{ code: "OTP_INVALID", message: "Invalid OTP" }]);
 	}
 
-	// Single use, race safe: whoever deletes the key first wins.
-	if ((await redis.del(key)) === 0) {
+	// Single use, race safe: whoever deletes the key first wins. The emailed
+	// link goes at the same time, so only one of the two ways in can be used.
+	if ((await endChallenge(challengeId, challenge)) === 0) {
 		throw new ApiError(400, "OTP already used", [
 			{ code: "OTP_EXPIRED", message: "OTP already used" },
 		]);
@@ -547,6 +582,56 @@ export const verifyLoginOtp = async (
 	}
 
 	return { ...tokens, deviceToken };
+};
+
+/**
+ * The other way through the same challenge: the link from the email.
+ *
+ * Three things make this safe enough to put a credential in a URL. The token is
+ * 32 random bytes and only its SHA-256 is stored, so a Redis dump is useless.
+ * It dies with the challenge — five minutes — and the `DEL` below is the single
+ * use: whoever removes the key first wins, and the challenge goes with it, so
+ * the emailed code cannot be used afterwards either.
+ *
+ * What it deliberately does *not* do is check the user agent. `verifyLoginOtp`
+ * refuses a challenge from a different browser, but a link is opened in the
+ * mail client, never in the app that started the login — binding it would mean
+ * the feature never works. That is the trade: this path is the short-lived,
+ * single-use, alerted one, and it never mints a trusted device, because a click
+ * cannot tell us the person meant to trust the machine they clicked on.
+ */
+export const completeMagicLogin = async (token: string, ctx: Ctx) => {
+	const magicKey = KEYS.loginMagic(sha256(token));
+	const invalid = new ApiError(400, "This sign-in link is invalid, used or expired", [
+		{ code: "OTP_EXPIRED", message: "Request a new login code" },
+	]);
+
+	const challengeId = await requireRedis(() => redis.get(magicKey));
+	if (!challengeId) throw invalid;
+
+	const challengeKey = KEYS.loginOtp(challengeId);
+	const raw = await requireRedis(() => redis.get(challengeKey));
+	if (!raw) throw invalid;
+
+	// Single use, race safe: two clicks on the same link, only one gets in.
+	if ((await redis.del(magicKey)) === 0) throw invalid;
+
+	const challenge = JSON.parse(raw) as LoginChallenge;
+	await endChallenge(challengeId, challenge);
+
+	const user = await prisma.user.findFirst({ where: { id: challenge.userId } });
+	if (!user) throw new ApiError(401, "User no longer exists");
+
+	const newDevice = await isNewDevice(user.id, ctx);
+	const tokens = await createSessionAndTokens(user, ctx);
+	otpCounter.inc({ kind: "login", outcome: "magic" });
+
+	if (newDevice) {
+		await logSecurity({ userId: user.id, type: "NEW_DEVICE", ctx });
+		await sendNewLoginAlert(user.email, { ip: ctx.ip, userAgent: ctx.ua });
+	}
+
+	return tokens;
 };
 
 export const resendLoginOtp = async (challengeId: string, ctx: Ctx) => {
@@ -584,9 +669,12 @@ export const resendLoginOtp = async (challengeId: string, ctx: Ctx) => {
 	challenge.attempts = 0;
 	challenge.resends += 1;
 
+	// A resend supersedes the earlier email, link included.
+	const magicLink = await issueMagicLink(challenge, challengeId, ttl);
+
 	await redis.set(key, JSON.stringify(challenge), "EX", ttl);
 	await redis.set(cooldownKey, "1", "EX", TTL.otpCooldown);
-	await sendLoginOtpEmail(user.email, otp, Math.round(ttl / 60));
+	await sendLoginOtpEmail(user.email, otp, Math.round(ttl / 60), magicLink);
 	await logSecurity({ userId: challenge.userId, type: "OTP_SENT", ctx });
 
 	return { challengeId, expiresInSec: ttl };

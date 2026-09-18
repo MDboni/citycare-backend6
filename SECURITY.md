@@ -43,7 +43,7 @@ tell you when a fix ships and credit you unless you would rather stay anonymous.
 | Area | Control |
 | --- | --- |
 | Passwords | bcrypt, 12 rounds, minimum 10 characters with mixed classes |
-| Two-factor | On for every account created through the API; only a CITIZEN may opt out, with their password plus a fresh OTP |
+| Two-factor | On for every account created through the API; the code and the emailed link end the same single-use challenge; only a CITIZEN may opt out, with their password plus a fresh OTP |
 | Tokens | HS256 only, issuer and audience pinned, `jti` denylist on logout, refresh rotation with reuse detection |
 | Privilege | `isSuperAdmin` is never in a token and cannot be set through any API; a database CHECK keeps it on ADMIN rows |
 | Input | Zod `.strict()` on every body; `sanitize-html` on every free-text field |

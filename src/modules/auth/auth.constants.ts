@@ -8,6 +8,8 @@ export const KEYS = {
 	loginFail: (email: string) => `login:fail:${email}`,
 	loginIp: (ip: string) => `login:ip:${ip}`,
 	loginOtp: (challengeId: string) => `login:otp:${challengeId}`,
+	/** Points at a challengeId. The raw token only ever exists in the email. */
+	loginMagic: (tokenHash: string) => `login:magic:${tokenHash}`,
 	passwordReset: (tokenHash: string) => `pwd:reset:${tokenHash}`,
 	jwtDeny: (jti: string) => `jwt:deny:${jti}`,
 	session: (sid: string) => `sess:${sid}`,

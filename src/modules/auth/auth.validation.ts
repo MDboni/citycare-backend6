@@ -94,6 +94,18 @@ export const resendLoginOtpSchema = z.object({
 	body: z.object({ challengeId: z.string().trim().length(64) }).strict(),
 });
 
+/** The emailed sign-in link: 32 random bytes, hex, in the query string. */
+export const magicLoginSchema = z.object({
+	query: z
+		.object({
+			token: z
+				.string()
+				.trim()
+				.regex(/^[a-f0-9]{64}$/, "Invalid sign-in link"),
+		})
+		.strict(),
+});
+
 export const refreshSchema = z.object({
 	body: z.object({ refreshToken: z.string().min(20).optional() }).strict(),
 });

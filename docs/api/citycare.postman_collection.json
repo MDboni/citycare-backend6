@@ -306,6 +306,30 @@
           },
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A fresh address every run, so signup never hits 409 EMAIL_EXISTS.",
+                  "//",
+                  "// With SMTP configured the OTP is emailed and never printed, so put your own",
+                  "// address in signupBaseEmail and the script turns it into a plus-address:",
+                  "//   you@gmail.com  ->  you+cc481902@gmail.com   (same inbox, new account)",
+                  "const base = (pm.environment.get(\"signupBaseEmail\") || \"\").trim();",
+                  "const stamp = String(Date.now()).slice(-6);",
+                  "",
+                  "if (base.indexOf(\"@\") > 0) {",
+                  "  const parts = base.split(\"@\");",
+                  "  pm.environment.set(\"signupEmail\", parts[0].split(\"+\")[0] + \"+cc\" + stamp + \"@\" + parts[1]);",
+                  "} else {",
+                  "  // No real address given: fine while SMTP is off, because the OTP is logged.",
+                  "  pm.environment.set(\"signupEmail\", \"citycare.\" + stamp + \"@example.com\");",
+                  "}",
+                  "console.log(\"signupEmail =\", pm.environment.get(\"signupEmail\"));"
+                ]
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
@@ -316,16 +340,6 @@
                   "pm.test(\"Standard response envelope\", function () {",
                   "  pm.expect(pm.response.json()).to.have.property(\"success\");",
                   "});"
-                ]
-              }
-            },
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// A fresh address every run, so the signup flow never hits 409 EMAIL_EXISTS.",
-                  "pm.environment.set(\"signupEmail\", \"citycare.\" + Date.now() + \"@example.com\");"
                 ]
               }
             }

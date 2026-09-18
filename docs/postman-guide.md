@@ -5,7 +5,7 @@ are captured as you go, every request checks its own status code, and nothing ne
 by hand.
 
 - Collection: [`docs/api/citycare.postman_collection.json`](api/citycare.postman_collection.json) — 99 requests, 10 numbered folders
-- Environment: [`docs/api/citycare.postman_environment.json`](api/citycare.postman_environment.json) — 44 variables
+- Environment: [`docs/api/citycare.postman_environment.json`](api/citycare.postman_environment.json) — 45 variables
 - The same surface is browsable at `http://localhost:5000/api/v1/docs` (Swagger UI) and in
   [`docs/openapi.yaml`](openapi.yaml)
 
@@ -122,6 +122,7 @@ request description explains when you get which.
 | `refreshToken`, `userId` | any login; refresh also rewrites `citizenToken` |
 | `challengeId` | a `202` two-factor response |
 | `otp` | **you type this in** — from the email, or the dev server log |
+| `signupBaseEmail` | **you set this** — your own address, so signup OTPs reach a real inbox (see §7) |
 | `signupEmail` | a pre-request script, fresh on every send |
 | `departmentId`, `categoryId`, `wardId`, `zoneId`, `serviceTypeId` | the Master data list requests — **seeded** rows, for reading |
 | `newDepartmentId`, `newCategoryId`, `newWardId`, `newZoneId`, `newServiceTypeId` | the Master data create requests — rows **this run made**, safe to rename and delete |
@@ -241,9 +242,33 @@ so you are never left guessing.
 minutes with the password bcrypt-hashed and the OTP HMAC-hashed; the row is created only when the
 OTP is verified.
 
-1. **02 — Auth → 01. Start signup** — a pre-request script puts a fresh address in `{{signupEmail}}`,
-   so this never collides. → `202 { email: "c****e@example.com", expiresInSec: 600 }`
-2. **Get the OTP.** With SMTP configured it is in the inbox. Without it, the dev server prints it:
+### First, decide where the OTP will arrive
+
+The server **never prints an OTP while SMTP is configured** — it emails it instead, and only falls
+back to the log when there is no mailbox to send to:
+
+```ts
+const devOtpHint = (to, otp, kind) => {
+  if (isProd || smtpConfigured) return;      // src/lib/mailer.ts
+  logger.warn(`[dev only] ${kind} OTP for ${to}: ${otp}`);
+};
+```
+
+That leaves two ways to test the OTP flows, and you have to pick one:
+
+| | What to do | What happens |
+| --- | --- | --- |
+| **A — read it from the terminal** | comment out `SMTP_USER` and `SMTP_PASS` in `.env`, restart | every OTP is printed in the server log. Simplest for a walkthrough, and the only way to log in as `citizen2@citycare.com`, whose address nobody owns |
+| **B — receive a real email** | leave SMTP on, and put your own address in the `signupBaseEmail` variable | the signup script turns `you@gmail.com` into `you+cc481902@gmail.com` — a new account every run, all landing in your one inbox |
+
+Option B covers signup only. The seeded `citizen2…citizen5@citycare.com` are not real addresses, so
+their two-factor login needs option A.
+
+### Then
+
+1. **02 — Auth → 01. Start signup** — the pre-request script fills `{{signupEmail}}` and prints it
+   in the console. → `202 { email: "c****e@example.com", expiresInSec: 600 }`
+2. **Get the OTP**, from the terminal or the inbox depending on which option you picked:
 
    ```
    WARN: [dev only] signup OTP for citycare.1758…@example.com: 418902
@@ -387,7 +412,7 @@ or staff may ask for one. All three need Cloudinary credentials; without them th
 | `409 INVALID_TRANSITION` | wrong step or wrong role | check the table in §5 |
 | `409` on `RESOLVED` | no resolution proof | upload an attachment with `kind: RESOLUTION_PROOF` first |
 | `503` on payment or upload | SSLCommerz / Cloudinary keys missing | fill them in `.env` and restart |
-| No OTP arrives | SMTP not configured | read it from the dev server log — `[dev only] … OTP for …` |
+| No OTP arrives, and nothing in the log | SMTP **is** configured, so the OTP was emailed to an address nobody owns | see §7 — either turn SMTP off, or set `signupBaseEmail` |
 | A `⚠` request logged you out | that is what it does | re-run folder 01 |
 
 ---

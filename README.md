@@ -123,7 +123,7 @@ is missing.
 | `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASS` `EMAIL_FROM` | – | without these, email is logged, not sent |
 | `CLOUDINARY_CLOUD_NAME` `CLOUDINARY_API_KEY` `CLOUDINARY_API_SECRET` | – | uploads return 503 when absent |
 | `SSL_STORE_ID` `SSL_STORE_PASSWORD` `SSL_IS_LIVE` | – | payments return 503 when absent |
-| `GOOGLE_CLIENT_ID` `GOOGLE_CLIENT_SECRET` `GOOGLE_CALLBACK_URL` | – | Google login is disabled when absent |
+| `GOOGLE_CLIENT_ID` `GOOGLE_CLIENT_SECRET` `GOOGLE_CALLBACK_URL` | – | without them the Google routes answer `503`; the rest of auth is unaffected |
 | `RATE_LIMIT_GLOBAL_MAX` `RATE_LIMIT_AUTH_MAX` | – | defaults `100` and `5`; raise them for a demo |
 | `CRON_SECRET` | – | bearer token for `/internal/jobs/*`; empty rejects every caller |
 | `ADMIN_EMAIL` `ADMIN_PASSWORD` `SUPER_ADMIN_EMAIL` | – | used by the seed script only |

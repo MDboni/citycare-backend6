@@ -141,7 +141,11 @@ request instead of within fifteen minutes.
 ## Google OAuth
 
 ```
-GET  /auth/google            → passport redirect (scope profile+email, session:false, state:true)
+GET  /auth/google            → passport redirect (scope profile+email, session:false)
+     state: 24 random bytes in Redis under oauth:state:<state>, TTL 10 min,
+     deleted on the way back — a replayed state finds nothing and fails.
+     Not a session: this API has none, and on a serverless host the callback
+     can land on a different instance than the redirect.
 GET  /auth/google/callback   → email_verified === false → 403
      ├─ existing user (by googleId, or by a live email → link googleId)
      │     → the normal 2FA challenge, or tokens if none is needed

@@ -150,6 +150,9 @@ importers:
       '@types/passport-google-oauth20':
         specifier: ^2.0.17
         version: 2.0.17
+      '@types/passport-oauth2':
+        specifier: ^1.8.0
+        version: 1.8.0
       '@types/pdfkit':
         specifier: ^0.17.6
         version: 0.17.6

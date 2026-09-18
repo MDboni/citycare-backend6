@@ -91,6 +91,7 @@
 		"@types/nodemailer": "^8.0.2",
 		"@types/passport": "^1.0.17",
 		"@types/passport-google-oauth20": "^2.0.17",
+		"@types/passport-oauth2": "^1.8.0",
 		"@types/pdfkit": "^0.17.6",
 		"@types/pg": "^8.20.0",
 		"@types/sanitize-html": "^2.16.1",

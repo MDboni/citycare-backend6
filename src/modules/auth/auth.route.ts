@@ -1,11 +1,12 @@
-import { Router } from "express";
-import passport from "@/config/passport.js";
+import { type RequestHandler, Router } from "express";
+import passport, { googleConfigured } from "@/config/passport.js";
 import { auth } from "@/middlewares/auth.js";
 import { authorize } from "@/middlewares/authorize.js";
 import { authLimiter } from "@/middlewares/rateLimiter.js";
 import { validateRequest } from "@/middlewares/validateRequest.js";
 import * as AuthController from "@/modules/auth/auth.controller.js";
 import * as V from "@/modules/auth/auth.validation.js";
+import { ApiError } from "@/utils/ApiError.js";
 
 export const authRoutes: Router = Router();
 
@@ -90,12 +91,34 @@ authRoutes.patch(
 // --- google ----------------------------------------------------------------
 // `session: false` — passport only parses the profile; our own session table
 // is the source of truth.
+/**
+ * Passport registers the Google strategy only when the credentials exist, so
+ * without them `passport.authenticate("google")` throws "Unknown authentication
+ * strategy" and the caller gets a bare 500 that explains nothing. Every other
+ * optional integration here — payments, file storage, and `/google/token`
+ * itself — answers 503 and names the missing key. These two were the exception.
+ */
+const requireGoogle: RequestHandler = (_req, _res, next) => {
+	next(
+		googleConfigured
+			? undefined
+			: new ApiError(503, "Google login is not configured", [
+					{
+						code: "SERVICE_UNAVAILABLE",
+						message: "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are not set",
+					},
+				]),
+	);
+};
+
 authRoutes.get(
 	"/google",
+	requireGoogle,
 	passport.authenticate("google", { scope: ["profile", "email"], session: false }),
 );
 authRoutes.get(
 	"/google/callback",
+	requireGoogle,
 	passport.authenticate("google", { session: false, failureRedirect: "/api/v1/auth/google" }),
 	AuthController.googleCallback,
 );

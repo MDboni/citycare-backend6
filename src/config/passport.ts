@@ -2,6 +2,7 @@ import passport from "passport";
 import { Strategy as GoogleStrategy, type Profile } from "passport-google-oauth20";
 import { env } from "@/config/env.js";
 import { logger } from "@/lib/logger.js";
+import { oauthStateStore } from "@/lib/oauthState.js";
 
 export const googleConfigured = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
 
@@ -33,8 +34,10 @@ if (googleConfigured) {
 				clientSecret: env.GOOGLE_CLIENT_SECRET,
 				callbackURL: env.GOOGLE_CALLBACK_URL,
 				scope: ["profile", "email"],
-				// No server session; the `state` parameter protects the callback from CSRF.
-				state: true,
+				// The `state` parameter protects the callback from CSRF. Passport keeps
+				// it in a session by default, and this API has none — so it goes to
+				// Redis instead. See lib/oauthState.ts.
+				store: oauthStateStore,
 			},
 			(_accessToken, _refreshToken, profile, done) => {
 				done(null, toGoogleProfile(profile) as unknown as Express.User);

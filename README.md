@@ -249,7 +249,7 @@ src/
   types/             express augmentation, sslcommerz-lts declaration
 tests/               unit + integration (Vitest + Supertest)
 docs/                architecture, database, auth-flow, payment-flow, runbook, ADRs,
-                     openapi.yaml, Postman collection
+                     postman-guide, openapi.yaml, Postman collection
 ```
 
 ---
@@ -258,6 +258,11 @@ docs/                architecture, database, auth-flow, payment-flow, runbook, A
 
 Base path `/api/v1`. Full reference: `docs/openapi.yaml`, served at
 `http://localhost:5000/api/v1/docs`, plus a Postman collection in `docs/api/`.
+
+**Testing it yourself:** [`docs/postman-guide.md`](docs/postman-guide.md) walks through the whole
+API in Postman — import, the three seeded logins, a complaint from report to closed, the payment
+flow, and the authorisation checks worth trying. Tokens and ids chain automatically, so no
+copy-pasting.
 
 | Group | Endpoints |
 | --- | --- |

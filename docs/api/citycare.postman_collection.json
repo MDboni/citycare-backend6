@@ -1,10 +1,215 @@
 {
   "info": {
     "name": "CityCare API",
-    "description": "CityCare — city complaint and service platform.\n\n1. Import the environment file next to this collection.\n2. Run **Auth → Log in** with a seeded account; the token is saved automatically.\n3. Citizen1 has 2FA off. ADMIN and OFFICER always get an OTP challenge — run **Log in**, read the code from your inbox, then **Complete the two-factor challenge**.\n\nEvery response uses the same envelope: `{ success, message, data, meta? }` or `{ success: false, message, errors[], requestId }`.",
+    "description": "CityCare API — 94 requests across every module.\n\nStart with the **0 — Start here** folder: health check, then the three seeded logins. Tokens and ids (complaintId, categoryId, paymentId …) are saved into the environment automatically by test scripts, so the requests chain together.\n\nImport `citycare.postman_environment.json` first and select it, top right.\n\nFull walkthrough: docs/postman-guide.md in the repository.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
+    {
+      "name": "0 — Start here",
+      "description": "Run these four in order after `pnpm run db:seed`. Each login stores its access token in the variable its role needs (adminToken / officerToken / citizenToken), so every other folder works without copying anything by hand.",
+      "item": [
+        {
+          "name": "Health — is the server up?",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{host}}/health",
+              "host": [
+                "{{host}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Outside /api/v1. `/ready` next to it also pings Postgres and Redis."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"server is up\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1. Log in as ADMIN",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@citycare.com\",\n  \"password\": \"Admin@12345\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Seeded super admin. Two-factor is off on the seeded accounts only, so this returns tokens in one call."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data;",
+                  "",
+                  "if (d && d.accessToken) {",
+                  "  const role = (d.user && d.user.role) || \"CITIZEN\";",
+                  "  const slot = role === \"ADMIN\" ? \"adminToken\" : role === \"OFFICER\" ? \"officerToken\" : \"citizenToken\";",
+                  "  pm.environment.set(slot, d.accessToken);",
+                  "  if (d.refreshToken) pm.environment.set(\"refreshToken\", d.refreshToken);",
+                  "  if (d.user && d.user.id) pm.environment.set(\"userId\", d.user.id);",
+                  "  console.log(\"saved \" + slot + \" for \" + role);",
+                  "} else if (d && d.challengeId) {",
+                  "  pm.environment.set(\"challengeId\", d.challengeId);",
+                  "  console.log(\"2FA required — challengeId saved. Read the OTP from the inbox, or from the server log in dev.\");",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Log in as OFFICER",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"officer1@citycare.com\",\n  \"password\": \"Officer@12345\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Roads officer, ward 1. Handles status changes and assigned complaints."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data;",
+                  "",
+                  "if (d && d.accessToken) {",
+                  "  const role = (d.user && d.user.role) || \"CITIZEN\";",
+                  "  const slot = role === \"ADMIN\" ? \"adminToken\" : role === \"OFFICER\" ? \"officerToken\" : \"citizenToken\";",
+                  "  pm.environment.set(slot, d.accessToken);",
+                  "  if (d.refreshToken) pm.environment.set(\"refreshToken\", d.refreshToken);",
+                  "  if (d.user && d.user.id) pm.environment.set(\"userId\", d.user.id);",
+                  "  console.log(\"saved \" + slot + \" for \" + role);",
+                  "} else if (d && d.challengeId) {",
+                  "  pm.environment.set(\"challengeId\", d.challengeId);",
+                  "  console.log(\"2FA required — challengeId saved. Read the OTP from the inbox, or from the server log in dev.\");",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Log in as CITIZEN",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"citizen1@citycare.com\",\n  \"password\": \"Citizen@12345\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "citizen1 has two-factor off; citizen2–5 return a 202 challenge and need an emailed OTP."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const d = body && body.data;",
+                  "",
+                  "if (d && d.accessToken) {",
+                  "  const role = (d.user && d.user.role) || \"CITIZEN\";",
+                  "  const slot = role === \"ADMIN\" ? \"adminToken\" : role === \"OFFICER\" ? \"officerToken\" : \"citizenToken\";",
+                  "  pm.environment.set(slot, d.accessToken);",
+                  "  if (d.refreshToken) pm.environment.set(\"refreshToken\", d.refreshToken);",
+                  "  if (d.user && d.user.id) pm.environment.set(\"userId\", d.user.id);",
+                  "  console.log(\"saved \" + slot + \" for \" + role);",
+                  "} else if (d && d.challengeId) {",
+                  "  pm.environment.set(\"challengeId\", d.challengeId);",
+                  "  console.log(\"2FA required — challengeId saved. Read the OTP from the inbox, or from the server log in dev.\");",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
     {
       "name": "Auth",
       "description": "Auth endpoints",
@@ -22,7 +227,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"string\",\n  \"email\": \"citizen1@citycare.com\",\n  \"password\": \"string\",\n  \"phone\": \"string\"\n}",
+              "raw": "{\n  \"name\": \"Test Citizen\",\n  \"email\": \"{{signupEmail}}\",\n  \"password\": \"Test@Passw0rd!\",\n  \"phone\": \"01711111111\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -80,6 +285,18 @@
               ],
               "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed\",\n  \"errors\": [\n    {\n      \"field\": \"body.email\",\n      \"code\": \"VALIDATION_ERROR\",\n      \"message\": \"Invalid email\"\n    }\n  ],\n  \"requestId\": \"…\"\n}"
             }
+          ],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A fresh address every run, so the signup flow never hits 409 EMAIL_EXISTS.",
+                  "pm.environment.set(\"signupEmail\", \"citycare.\" + Date.now() + \"@example.com\");"
+                ]
+              }
+            }
           ]
         },
         {
@@ -95,7 +312,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"citizen1@citycare.com\",\n  \"otp\": \"string\"\n}",
+              "raw": "{\n  \"email\": \"{{signupEmail}}\",\n  \"otp\": \"{{otp}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -121,14 +338,19 @@
                 "type": "text/javascript",
                 "exec": [
                   "const body = pm.response.json();",
-                  "const token = body?.data?.accessToken;",
-                  "if (token) {",
-                  "  pm.environment.set(\"citizenToken\", token);",
-                  "  if (body.data.refreshToken) pm.environment.set(\"refreshToken\", body.data.refreshToken);",
-                  "  console.log(\"saved citizenToken\");",
-                  "} else if (body?.data?.challengeId) {",
-                  "  pm.environment.set(\"challengeId\", body.data.challengeId);",
-                  "  console.log(\"saved challengeId — call login/verify-otp with the emailed OTP\");",
+                  "const d = body && body.data;",
+                  "",
+                  "if (d && d.accessToken) {",
+                  "  const role = (d.user && d.user.role) || \"CITIZEN\";",
+                  "  const slot = role === \"ADMIN\" ? \"adminToken\" : role === \"OFFICER\" ? \"officerToken\" : \"citizenToken\";",
+                  "  pm.environment.set(slot, d.accessToken);",
+                  "  if (d.refreshToken) pm.environment.set(\"refreshToken\", d.refreshToken);",
+                  "  if (d.user && d.user.id) pm.environment.set(\"userId\", d.user.id);",
+                  "  if (d.deviceToken) pm.environment.set(\"deviceToken\", d.deviceToken);",
+                  "  console.log(\"saved \" + slot + \" for \" + role);",
+                  "} else if (d && d.challengeId) {",
+                  "  pm.environment.set(\"challengeId\", d.challengeId);",
+                  "  console.log(\"2FA required — challengeId saved. Read the OTP from the email, or from the server log in dev.\");",
                   "}"
                 ]
               }
@@ -188,7 +410,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"citizen1@citycare.com\"\n}",
+              "raw": "{\n  \"email\": \"{{signupEmail}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -261,7 +483,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"citizen1@citycare.com\",\n  \"password\": \"string\",\n  \"deviceToken\": \"string\"\n}",
+              "raw": "{\n  \"email\": \"citizen1@citycare.com\",\n  \"password\": \"Citizen@12345\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -287,14 +509,19 @@
                 "type": "text/javascript",
                 "exec": [
                   "const body = pm.response.json();",
-                  "const token = body?.data?.accessToken;",
-                  "if (token) {",
-                  "  pm.environment.set(\"citizenToken\", token);",
-                  "  if (body.data.refreshToken) pm.environment.set(\"refreshToken\", body.data.refreshToken);",
-                  "  console.log(\"saved citizenToken\");",
-                  "} else if (body?.data?.challengeId) {",
-                  "  pm.environment.set(\"challengeId\", body.data.challengeId);",
-                  "  console.log(\"saved challengeId — call login/verify-otp with the emailed OTP\");",
+                  "const d = body && body.data;",
+                  "",
+                  "if (d && d.accessToken) {",
+                  "  const role = (d.user && d.user.role) || \"CITIZEN\";",
+                  "  const slot = role === \"ADMIN\" ? \"adminToken\" : role === \"OFFICER\" ? \"officerToken\" : \"citizenToken\";",
+                  "  pm.environment.set(slot, d.accessToken);",
+                  "  if (d.refreshToken) pm.environment.set(\"refreshToken\", d.refreshToken);",
+                  "  if (d.user && d.user.id) pm.environment.set(\"userId\", d.user.id);",
+                  "  if (d.deviceToken) pm.environment.set(\"deviceToken\", d.deviceToken);",
+                  "  console.log(\"saved \" + slot + \" for \" + role);",
+                  "} else if (d && d.challengeId) {",
+                  "  pm.environment.set(\"challengeId\", d.challengeId);",
+                  "  console.log(\"2FA required — challengeId saved. Read the OTP from the email, or from the server log in dev.\");",
                   "}"
                 ]
               }
@@ -354,7 +581,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"challengeId\": \"string\",\n  \"otp\": \"string\",\n  \"trustDevice\": false\n}",
+              "raw": "{\n  \"challengeId\": \"{{challengeId}}\",\n  \"otp\": \"{{otp}}\",\n  \"trustDevice\": false\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -381,14 +608,19 @@
                 "type": "text/javascript",
                 "exec": [
                   "const body = pm.response.json();",
-                  "const token = body?.data?.accessToken;",
-                  "if (token) {",
-                  "  pm.environment.set(\"citizenToken\", token);",
-                  "  if (body.data.refreshToken) pm.environment.set(\"refreshToken\", body.data.refreshToken);",
-                  "  console.log(\"saved citizenToken\");",
-                  "} else if (body?.data?.challengeId) {",
-                  "  pm.environment.set(\"challengeId\", body.data.challengeId);",
-                  "  console.log(\"saved challengeId — call login/verify-otp with the emailed OTP\");",
+                  "const d = body && body.data;",
+                  "",
+                  "if (d && d.accessToken) {",
+                  "  const role = (d.user && d.user.role) || \"CITIZEN\";",
+                  "  const slot = role === \"ADMIN\" ? \"adminToken\" : role === \"OFFICER\" ? \"officerToken\" : \"citizenToken\";",
+                  "  pm.environment.set(slot, d.accessToken);",
+                  "  if (d.refreshToken) pm.environment.set(\"refreshToken\", d.refreshToken);",
+                  "  if (d.user && d.user.id) pm.environment.set(\"userId\", d.user.id);",
+                  "  if (d.deviceToken) pm.environment.set(\"deviceToken\", d.deviceToken);",
+                  "  console.log(\"saved \" + slot + \" for \" + role);",
+                  "} else if (d && d.challengeId) {",
+                  "  pm.environment.set(\"challengeId\", d.challengeId);",
+                  "  console.log(\"2FA required — challengeId saved. Read the OTP from the email, or from the server log in dev.\");",
                   "}"
                 ]
               }
@@ -448,7 +680,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"challengeId\": \"string\"\n}",
+              "raw": "{\n  \"challengeId\": \"{{challengeId}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -522,7 +754,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"refreshToken\": \"string\"\n}",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -579,6 +811,18 @@
                 }
               ],
               "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed\",\n  \"errors\": [\n    {\n      \"field\": \"body.email\",\n      \"code\": \"VALIDATION_ERROR\",\n      \"message\": \"Invalid email\"\n    }\n  ],\n  \"requestId\": \"…\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data;",
+                  "if (d && d.accessToken) { pm.environment.set(\"citizenToken\", d.accessToken); pm.environment.set(\"refreshToken\", d.refreshToken); }"
+                ]
+              }
             }
           ]
         },
@@ -772,6 +1016,19 @@
               ],
               "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed\",\n  \"errors\": [\n    {\n      \"field\": \"body.email\",\n      \"code\": \"VALIDATION_ERROR\",\n      \"message\": \"Invalid email\"\n    }\n  ],\n  \"requestId\": \"…\"\n}"
             }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data;",
+                  "const row = Array.isArray(d) ? d[0] : d;",
+                  "if (row && row.id) { pm.environment.set(\"sessionId\", row.id); console.log(\"sessionId =\", row.id); }"
+                ]
+              }
+            }
           ]
         },
         {
@@ -794,6 +1051,12 @@
                 "auth",
                 "sessions",
                 ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{sessionId}}"
+                }
               ]
             },
             "description": "Revoke one of your own sessions"
@@ -857,7 +1120,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"enabled\": false,\n  \"password\": \"string\",\n  \"challengeId\": \"string\",\n  \"otp\": \"string\"\n}",
+              "raw": "{\n  \"enabled\": false,\n  \"password\": \"Citizen@12345\",\n  \"challengeId\": \"{{challengeId}}\",\n  \"otp\": \"{{otp}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1194,7 +1457,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"token\": \"string\",\n  \"password\": \"string\"\n}",
+              "raw": "{\n  \"token\": \"{{resetToken}}\",\n  \"password\": \"New@Passw0rd!\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1272,7 +1535,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"currentPassword\": \"string\",\n  \"newPassword\": \"string\"\n}",
+              "raw": "{\n  \"currentPassword\": \"Citizen@12345\",\n  \"newPassword\": \"New@Passw0rd!\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1745,6 +2008,19 @@
               ],
               "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed\",\n  \"errors\": [\n    {\n      \"field\": \"body.email\",\n      \"code\": \"VALIDATION_ERROR\",\n      \"message\": \"Invalid email\"\n    }\n  ],\n  \"requestId\": \"…\"\n}"
             }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data;",
+                  "const row = Array.isArray(d) ? d[0] : d;",
+                  "if (row && row.id) { pm.environment.set(\"departmentId\", row.id); console.log(\"departmentId =\", row.id); }"
+                ]
+              }
+            }
           ]
         },
         {
@@ -1857,6 +2133,12 @@
               "path": [
                 "departments",
                 ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{departmentId}}"
+                }
               ]
             },
             "description": "Update a department (ADMIN)"
@@ -1921,6 +2203,12 @@
               "path": [
                 "departments",
                 ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{departmentId}}"
+                }
               ]
             },
             "description": "Soft-delete a department (ADMIN)"
@@ -2020,6 +2308,21 @@
                 }
               ],
               "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed\",\n  \"errors\": [\n    {\n      \"field\": \"body.email\",\n      \"code\": \"VALIDATION_ERROR\",\n      \"message\": \"Invalid email\"\n    }\n  ],\n  \"requestId\": \"…\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const rows = pm.response.json().data || [];",
+                  "// Pothole belongs to Roads, the department officer1 works in — that keeps the",
+                  "// assign step in the walkthrough deterministic.",
+                  "const pick = rows.find(function (x) { return x.name === \"Pothole\"; }) || rows[0];",
+                  "if (pick) { pm.environment.set(\"categoryId\", pick.id); console.log(\"categoryId =\", pick.id, pick.name); }"
+                ]
+              }
             }
           ]
         },
@@ -2133,6 +2436,12 @@
               "path": [
                 "categories",
                 ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{categoryId}}"
+                }
               ]
             },
             "description": "Update a category (ADMIN; an SLA change is audit logged)"
@@ -2197,6 +2506,12 @@
               "path": [
                 "categories",
                 ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{categoryId}}"
+                }
               ]
             },
             "description": "Soft-delete a category (ADMIN; refused while complaints are open)"
@@ -2296,6 +2611,19 @@
                 }
               ],
               "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed\",\n  \"errors\": [\n    {\n      \"field\": \"body.email\",\n      \"code\": \"VALIDATION_ERROR\",\n      \"message\": \"Invalid email\"\n    }\n  ],\n  \"requestId\": \"…\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data;",
+                  "const row = Array.isArray(d) ? d[0] : d;",
+                  "if (row && row.id) { pm.environment.set(\"wardId\", row.id); console.log(\"wardId =\", row.id); }"
+                ]
+              }
             }
           ]
         },
@@ -2409,6 +2737,12 @@
               "path": [
                 "wards",
                 ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{wardId}}"
+                }
               ]
             },
             "description": "Update a ward (ADMIN)"
@@ -2508,6 +2842,19 @@
                 }
               ],
               "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed\",\n  \"errors\": [\n    {\n      \"field\": \"body.email\",\n      \"code\": \"VALIDATION_ERROR\",\n      \"message\": \"Invalid email\"\n    }\n  ],\n  \"requestId\": \"…\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data;",
+                  "const row = Array.isArray(d) ? d[0] : d;",
+                  "if (row && row.id) { pm.environment.set(\"zoneId\", row.id); console.log(\"zoneId =\", row.id); }"
+                ]
+              }
             }
           ]
         },
@@ -2643,6 +2990,19 @@
               ],
               "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed\",\n  \"errors\": [\n    {\n      \"field\": \"body.email\",\n      \"code\": \"VALIDATION_ERROR\",\n      \"message\": \"Invalid email\"\n    }\n  ],\n  \"requestId\": \"…\"\n}"
             }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data;",
+                  "const row = Array.isArray(d) ? d[0] : d;",
+                  "if (row && row.id) { pm.environment.set(\"serviceTypeId\", row.id); console.log(\"serviceTypeId =\", row.id); }"
+                ]
+              }
+            }
           ]
         },
         {
@@ -2755,6 +3115,12 @@
               "path": [
                 "service-types",
                 ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{serviceTypeId}}"
+                }
               ]
             },
             "description": "Update a service type (ADMIN)"
@@ -2813,7 +3179,7 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{citizenToken}}",
+                "value": "Bearer {{officerToken}}",
                 "type": "text"
               }
             ],
@@ -2933,11 +3299,16 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}",
+                "type": "text"
               }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Road e boro gorto\",\n  \"description\": \"Mirpur 10 golchottor er pashe 3 foot gorto, rickshaw ulte jacche\",\n  \"categoryId\": \"2d60fe54-b4c4-4d68-b34b-1e7ab88e5bd0\",\n  \"wardId\": \"5777c481-43f6-4cb3-a4bd-46c2c38f25d8\",\n  \"address\": \"Mirpur 10, Dhaka\",\n  \"latitude\": 23.8069,\n  \"longitude\": 90.3687\n}",
+              "raw": "{\n  \"title\": \"Road e boro gorto\",\n  \"description\": \"Mirpur 10 golchottor er pashe 3 foot gorto, rickshaw ulte jacche\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"wardId\": \"{{wardId}}\",\n  \"address\": \"Mirpur 10, Dhaka\",\n  \"latitude\": 23.8069,\n  \"longitude\": 90.3687\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2993,6 +3364,20 @@
                 }
               ],
               "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed\",\n  \"errors\": [\n    {\n      \"field\": \"body.email\",\n      \"code\": \"VALIDATION_ERROR\",\n      \"message\": \"Invalid email\"\n    }\n  ],\n  \"requestId\": \"…\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data;",
+                  "if (d && d.id) pm.environment.set(\"complaintId\", d.id);",
+                  "if (d && d.trackingId) pm.environment.set(\"trackingId\", d.trackingId);",
+                  "console.log(\"complaintId =\", d && d.id, \"| trackingId =\", d && d.trackingId);"
+                ]
+              }
             }
           ]
         },
@@ -3067,7 +3452,7 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{citizenToken}}",
+                "value": "Bearer {{officerToken}}",
                 "type": "text"
               }
             ],
@@ -3304,7 +3689,7 @@
               "variable": [
                 {
                   "key": "trackingId",
-                  "value": ""
+                  "value": "{{trackingId}}"
                 }
               ]
             },
@@ -3370,6 +3755,12 @@
               "path": [
                 "complaints",
                 ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{complaintId}}"
+                }
               ]
             },
             "description": "One complaint (owner, assigned officer or ADMIN; internal notes hidden from citizens)"
@@ -3433,7 +3824,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"string\",\n  \"description\": \"string\",\n  \"address\": \"string\",\n  \"latitude\": 0,\n  \"longitude\": 0\n}",
+              "raw": "{\n  \"title\": \"Road e boro gorto (updated)\",\n  \"description\": \"Gorto ekhon aro boro hoyeche, prai 4 foot\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3448,6 +3839,12 @@
               "path": [
                 "complaints",
                 ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{complaintId}}"
+                }
               ]
             },
             "description": "Edit your complaint (owner, while it is still SUBMITTED)"
@@ -3500,7 +3897,7 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{citizenToken}}",
+                "value": "Bearer {{adminToken}}",
                 "type": "text"
               }
             ],
@@ -3512,6 +3909,12 @@
               "path": [
                 "complaints",
                 ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{complaintId}}"
+                }
               ]
             },
             "description": "Soft-delete a complaint (ADMIN)"
@@ -3564,7 +3967,7 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{citizenToken}}",
+                "value": "Bearer {{adminToken}}",
                 "type": "text"
               },
               {
@@ -3575,7 +3978,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"status\": \"UNDER_REVIEW\",\n  \"note\": \"string\"\n}",
+              "raw": "{\n  \"status\": \"UNDER_REVIEW\",\n  \"note\": \"Reviewing the report\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3591,6 +3994,12 @@
                 "complaints",
                 ":id",
                 "status"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{complaintId}}"
+                }
               ]
             },
             "description": "The transition map decides which role may make which move. Anything else is\n`409 INVALID_TRANSITION`. `RESOLVED` requires at least one `RESOLUTION_PROOF`\nattachment. `REJECTED` requires a note. Two concurrent calls give one 200 and one 409.\n\n\nMove the complaint through the state machine"
@@ -3643,7 +4052,7 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{citizenToken}}",
+                "value": "Bearer {{adminToken}}",
                 "type": "text"
               },
               {
@@ -3654,7 +4063,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"officerId\": \"{{uuid}}\",\n  \"auto\": false,\n  \"reason\": \"string\"\n}",
+              "raw": "{\n  \"officerId\": \"{{officerId}}\",\n  \"auto\": false,\n  \"reason\": \"Nearest roads officer\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3670,6 +4079,12 @@
                 "complaints",
                 ":id",
                 "assign"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{complaintId}}"
+                }
               ]
             },
             "description": "Either `officerId`, or `auto: true` to pick the least-loaded active officer of the category's department.\n\nAssign or reassign an officer (ADMIN)"
@@ -3733,7 +4148,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"note\": \"string\"\n}",
+              "raw": "{\n  \"note\": \"Solved on its own\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3749,6 +4164,12 @@
                 "complaints",
                 ":id",
                 "cancel"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{complaintId}}"
+                }
               ]
             },
             "description": "Cancel your complaint (owner, while SUBMITTED)"
@@ -3812,7 +4233,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"note\": \"string\"\n}",
+              "raw": "{\n  \"note\": \"The pothole is back\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3828,6 +4249,12 @@
                 "complaints",
                 ":id",
                 "reopen"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{complaintId}}"
+                }
               ]
             },
             "description": "Reopen a resolved complaint (owner, within 7 days, at most twice)"
@@ -3893,6 +4320,12 @@
                 "complaints",
                 ":id",
                 "history"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{complaintId}}"
+                }
               ]
             },
             "description": "Full status history"
@@ -3960,7 +4393,7 @@
                 {
                   "key": "kind",
                   "type": "text",
-                  "value": ""
+                  "value": "EVIDENCE"
                 }
               ]
             },
@@ -3973,6 +4406,12 @@
                 "complaints",
                 ":id",
                 "attachments"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{complaintId}}"
+                }
               ]
             },
             "description": "jpg, png or webp, 5 MB, magic-byte checked, at most 5 per complaint.\n\nUpload evidence (owner) or resolution proof (assigned officer)"
@@ -4038,6 +4477,12 @@
                 "complaints",
                 ":id",
                 "comments"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{complaintId}}"
+                }
               ]
             },
             "description": "Comments (internal notes are invisible to citizens)"
@@ -4101,7 +4546,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"body\": \"string\",\n  \"isInternal\": false\n}",
+              "raw": "{\n  \"body\": \"Work order raised with the contractor\",\n  \"isInternal\": false\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4117,6 +4562,12 @@
                 "complaints",
                 ":id",
                 "comments"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{complaintId}}"
+                }
               ]
             },
             "description": "Add a comment (HTML is stripped before storage)"
@@ -4182,6 +4633,12 @@
                 "complaints",
                 ":id",
                 "upvote"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{complaintId}}"
+                }
               ]
             },
             "description": "Upvote (once per citizen; ten upvotes raise the priority one step)"
@@ -4245,7 +4702,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"rating\": 1,\n  \"comment\": \"string\"\n}",
+              "raw": "{\n  \"rating\": 5,\n  \"comment\": \"Fixed within two days, thanks\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4261,6 +4718,12 @@
                 "complaints",
                 ":id",
                 "feedback"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{complaintId}}"
+                }
               ]
             },
             "description": "Rate a resolved complaint (owner, once; rating a RESOLVED one closes it)"
@@ -4319,7 +4782,7 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{citizenToken}}",
+                "value": "Bearer {{officerToken}}",
                 "type": "text"
               }
             ],
@@ -4401,7 +4864,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"serviceTypeId\": \"{{uuid}}\",\n  \"details\": {}\n}",
+              "raw": "{\n  \"serviceTypeId\": \"{{serviceTypeId}}\",\n  \"details\": {\n    \"applicantName\": \"Citizen 1\",\n    \"purpose\": \"Trade licence renewal\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4457,6 +4920,18 @@
                 }
               ],
               "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed\",\n  \"errors\": [\n    {\n      \"field\": \"body.email\",\n      \"code\": \"VALIDATION_ERROR\",\n      \"message\": \"Invalid email\"\n    }\n  ],\n  \"requestId\": \"…\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data;",
+                  "if (d && d.id) { pm.environment.set(\"serviceRequestId\", d.id); console.log(\"serviceRequestId =\", d.id); }"
+                ]
+              }
             }
           ]
         },
@@ -4543,6 +5018,12 @@
               "path": [
                 "service-requests",
                 ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{serviceRequestId}}"
+                }
               ]
             },
             "description": "One request (owner, OFFICER or ADMIN)"
@@ -4595,7 +5076,7 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{citizenToken}}",
+                "value": "Bearer {{officerToken}}",
                 "type": "text"
               },
               {
@@ -4606,7 +5087,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"status\": \"PROCESSING\",\n  \"note\": \"string\"\n}",
+              "raw": "{\n  \"status\": \"PROCESSING\",\n  \"note\": \"Documents received\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4622,6 +5103,12 @@
                 "service-requests",
                 ":id",
                 "status"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{serviceRequestId}}"
+                }
               ]
             },
             "description": "PAID → PROCESSING → COMPLETED or REJECTED. Anything else is a 409.\n\nProcess a paid request (OFFICER, ADMIN)"
@@ -4689,7 +5176,7 @@
                 {
                   "key": "label",
                   "type": "text",
-                  "value": ""
+                  "value": "National ID copy"
                 }
               ]
             },
@@ -4702,6 +5189,12 @@
                 "service-requests",
                 ":id",
                 "documents"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{serviceRequestId}}"
+                }
               ]
             },
             "description": "Stored as a Cloudinary `authenticated` asset; the URL alone is useless without a signature.\n\nUpload a supporting document (owner)"
@@ -4745,6 +5238,18 @@
               ],
               "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed\",\n  \"errors\": [\n    {\n      \"field\": \"body.email\",\n      \"code\": \"VALIDATION_ERROR\",\n      \"message\": \"Invalid email\"\n    }\n  ],\n  \"requestId\": \"…\"\n}"
             }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data;",
+                  "if (d && d.id) { pm.environment.set(\"documentId\", d.id); console.log(\"documentId =\", d.id); }"
+                ]
+              }
+            }
           ]
         },
         {
@@ -4771,8 +5276,12 @@
               ],
               "variable": [
                 {
+                  "key": "id",
+                  "value": "{{serviceRequestId}}"
+                },
+                {
                   "key": "docId",
-                  "value": ""
+                  "value": "{{documentId}}"
                 }
               ]
             },
@@ -4839,11 +5348,16 @@
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}",
+                "type": "text"
               }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"serviceRequestId\": \"{{uuid}}\"\n}",
+              "raw": "{\n  \"serviceRequestId\": \"{{serviceRequestId}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4900,6 +5414,20 @@
                 }
               ],
               "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed\",\n  \"errors\": [\n    {\n      \"field\": \"body.email\",\n      \"code\": \"VALIDATION_ERROR\",\n      \"message\": \"Invalid email\"\n    }\n  ],\n  \"requestId\": \"…\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data;",
+                  "if (d && d.paymentId) pm.environment.set(\"paymentId\", d.paymentId);",
+                  "if (d && d.transactionId) pm.environment.set(\"transactionId\", d.transactionId);",
+                  "console.log(\"Open this in a browser to pay:\", d && d.paymentUrl);"
+                ]
+              }
             }
           ]
         },
@@ -5218,6 +5746,12 @@
               "path": [
                 "payments",
                 ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{paymentId}}"
+                }
               ]
             },
             "description": "One payment (owner or ADMIN)"
@@ -5270,7 +5804,7 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{citizenToken}}",
+                "value": "Bearer {{adminToken}}",
                 "type": "text"
               },
               {
@@ -5281,7 +5815,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"reason\": \"string\"\n}",
+              "raw": "{\n  \"reason\": \"Service could not be delivered\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5297,6 +5831,12 @@
                 "payments",
                 ":id",
                 "refund"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{paymentId}}"
+                }
               ]
             },
             "description": "Request a refund (ADMIN)"
@@ -5349,7 +5889,7 @@
             "header": [
               {
                 "key": "Authorization",
-                "value": "Bearer {{citizenToken}}",
+                "value": "Bearer {{adminToken}}",
                 "type": "text"
               }
             ],
@@ -5363,6 +5903,12 @@
                 ":id",
                 "refund",
                 "approve"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{paymentId}}"
+                }
               ]
             },
             "description": "Approve and execute a refund (super admin)"
@@ -5483,6 +6029,19 @@
               ],
               "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed\",\n  \"errors\": [\n    {\n      \"field\": \"body.email\",\n      \"code\": \"VALIDATION_ERROR\",\n      \"message\": \"Invalid email\"\n    }\n  ],\n  \"requestId\": \"…\"\n}"
             }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data;",
+                  "const row = Array.isArray(d) ? d[0] : d;",
+                  "if (row && row.id) { pm.environment.set(\"notificationId\", row.id); console.log(\"notificationId =\", row.id); }"
+                ]
+              }
+            }
           ]
         },
         {
@@ -5569,6 +6128,12 @@
                 "notifications",
                 ":id",
                 "read"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{notificationId}}"
+                }
               ]
             },
             "description": "Mark one read (owner)"
@@ -5702,6 +6267,23 @@
               ],
               "body": "{\n  \"success\": false,\n  \"message\": \"Validation failed\",\n  \"errors\": [\n    {\n      \"field\": \"body.email\",\n      \"code\": \"VALIDATION_ERROR\",\n      \"message\": \"Invalid email\"\n    }\n  ],\n  \"requestId\": \"…\"\n}"
             }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const rows = pm.response.json().data || [];",
+                  "const officer = rows.find(function (u) { return u.email === \"officer1@citycare.com\"; })",
+                  "  || rows.find(function (u) { return u.role === \"OFFICER\"; });",
+                  "const citizen = rows.find(function (u) { return u.email === \"citizen3@citycare.com\"; })",
+                  "  || rows.find(function (u) { return u.role === \"CITIZEN\"; });",
+                  "if (officer) { pm.environment.set(\"officerId\", officer.id); console.log(\"officerId =\", officer.id); }",
+                  "if (citizen) { pm.environment.set(\"targetUserId\", citizen.id); console.log(\"targetUserId =\", citizen.id); }"
+                ]
+              }
+            }
           ]
         },
         {
@@ -5722,7 +6304,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"string\",\n  \"email\": \"citizen1@citycare.com\",\n  \"phone\": \"string\",\n  \"departmentId\": \"{{uuid}}\",\n  \"wardId\": \"{{uuid}}\"\n}",
+              "raw": "{\n  \"name\": \"New Roads Officer\",\n  \"email\": \"officer.new@citycare.com\",\n  \"phone\": \"01799999999\",\n  \"departmentId\": \"{{departmentId}}\",\n  \"wardId\": \"{{wardId}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5800,7 +6382,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"role\": \"CITIZEN\"\n}",
+              "raw": "{\n  \"role\": \"OFFICER\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5817,6 +6399,12 @@
                 "users",
                 ":id",
                 "role"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{targetUserId}}"
+                }
               ]
             },
             "description": "Change a role (granting ADMIN needs a super admin; every session is revoked)"
@@ -5880,7 +6468,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"status\": \"ACTIVE\",\n  \"reason\": \"string\"\n}",
+              "raw": "{\n  \"status\": \"BLOCKED\",\n  \"reason\": \"Repeated abusive comments\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5897,6 +6485,12 @@
                 "users",
                 ":id",
                 "status"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{targetUserId}}"
+                }
               ]
             },
             "description": "Block or unblock (blocking revokes every session)"
@@ -5963,6 +6557,12 @@
                 "users",
                 ":id",
                 "sessions"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{targetUserId}}"
+                }
               ]
             },
             "description": "Force logout"
@@ -6106,6 +6706,12 @@
                 "admin",
                 "admins",
                 ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{targetUserId}}"
+                }
               ]
             },
             "description": "Remove an admin (super admin only; the last super admin is protected)"
@@ -6176,7 +6782,11 @@
               "variable": [
                 {
                   "key": "entity",
-                  "value": ""
+                  "value": "complaint"
+                },
+                {
+                  "key": "id",
+                  "value": "{{complaintId}}"
                 }
               ]
             },
@@ -6705,7 +7315,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"value\": 0\n}",
+              "raw": "{\n  \"value\": 3\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6725,7 +7335,7 @@
               "variable": [
                 {
                   "key": "key",
-                  "value": ""
+                  "value": "REOPEN_LIMIT"
                 }
               ]
             },

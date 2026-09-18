@@ -64,6 +64,10 @@ First complete build of the CityCare backend.
 - Vitest unit tests for the transition map, pagination, the sort whitelist, OTP hashing, the
   tracking-id format and the response envelope; Supertest integration tests for the priority
   cases.
+- A Postman walkthrough, [`docs/postman-guide.md`](docs/postman-guide.md), verified end to end
+  against a running server. The collection chains tokens and ids through test scripts: a login
+  stores its access token under the variable its role needs, and every created id is captured for
+  the requests that follow.
 - GitHub Actions running lint, typecheck, migrations, tests with coverage, `pnpm audit`,
   gitleaks and the build against Postgres and Redis services.
 - Biome, husky, lint-staged and commitlint.

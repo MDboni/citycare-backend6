@@ -1,0 +1,21 @@
+# The Vercel CLI does not read .gitignore, so a local `vercel` deploy would
+# happily upload real secrets. List them here first.
+.env
+.env.*
+!.env.example
+
+# Not needed to build or to serve a request.
+tests
+coverage
+scripts
+.github
+.husky
+.claude
+.agents
+.windsurf
+*.log
+
+# Deliberately NOT ignored:
+#   docs/    — src/lib/swagger.ts reads docs/openapi.yaml at runtime to serve
+#              /api/v1/docs. Ignoring it turns the docs route into a 404.
+#   prisma/  — `prisma generate` runs during the build and needs the schema.

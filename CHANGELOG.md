@@ -64,6 +64,12 @@ First complete build of the CityCare backend.
 - Daily retention purge that anonymises accounts deleted more than 30 days ago while keeping
   their complaints and payments.
 - Prometheus metrics, Swagger UI at `/api/v1/docs`, and PDF receipts.
+- A serverless deployment path: `api/index.ts`, `vercel.json` and `.vercelignore`, plus
+  `/internal/jobs/sla` and `/internal/jobs/purge` behind a constant-time `CRON_SECRET` check.
+  `node-cron` needs a process that stays alive; where there is none, the platform's scheduler
+  calls the same `runSlaCheck` and `runPurge` over HTTP. One implementation, two triggers —
+  `src/server.ts` and `startJobs()` are unchanged and still correct everywhere else.
+  See [`docs/deploy-vercel.md`](docs/deploy-vercel.md).
 
 **Quality**
 - Vitest unit tests for the transition map, pagination, the sort whitelist, OTP hashing, the
@@ -85,6 +91,15 @@ First complete build of the CityCare backend.
   a file stopped at the platform edge never reaches the middleware — the caller gets an opaque
   platform error instead of this API's `413 File too large`. Staying under that line keeps every
   rejection ours to explain.
+- Rate limit counters live in Redis when it is configured, so instances share one budget. The
+  in-memory store was defensible on a single long-running server and meaningless on a host that
+  answers each request from a fresh instance: every counter would start near zero and the limiter
+  would read as present while enforcing nothing. Redis stays a *soft* dependency — an unreachable
+  Redis drops each instance back to its own counters and logs one warning, rather than turning a
+  cache outage into a wall of 500s.
+- The OpenAPI document is found relative to this module as well as to the working directory. A
+  long-running server is started from the project root; a serverless function is invoked with a
+  working directory nobody promised, and `/api/v1/docs` went quietly missing.
 - `authLimiter` counts **failed** attempts only. What it defends against is guessing, and a
   successful login is not a guess — counting it locked out the one person who typed the right
   password while a bot that fails every time got the same five tries either way.

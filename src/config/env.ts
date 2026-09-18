@@ -63,6 +63,13 @@ const envSchema = z.object({
 	RATE_LIMIT_GLOBAL_MAX: z.coerce.number().int().min(1).default(100),
 	RATE_LIMIT_AUTH_MAX: z.coerce.number().int().min(1).default(5),
 
+	// --- scheduled jobs -------------------------------------------------------
+	// Only used on hosts that cannot run node-cron. The platform's scheduler
+	// calls /internal/jobs/* and sends this as a bearer token. Empty means those
+	// endpoints refuse everything, which is the right default for a host that
+	// runs the cron in-process.
+	CRON_SECRET: z.string().default(""),
+
 	// --- seed ---------------------------------------------------------------
 	ADMIN_EMAIL: z.string().default("admin@citycare.com"),
 	ADMIN_PASSWORD: z.string().default("Admin@12345"),

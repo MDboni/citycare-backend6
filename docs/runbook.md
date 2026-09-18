@@ -68,3 +68,27 @@ What to do in the first fifteen minutes. Record every incident in
 | `/health` | The process is alive. Use it for uptime monitoring |
 | `/ready` | Postgres answered and Redis status is reported. 503 if the database is unreachable. Use it as the platform health check |
 | `/metrics` | Prometheus metrics; needs an ADMIN token |
+
+## Running a scheduled job by hand
+
+The SLA escalation and the retention purge normally run from `node-cron` inside the process.
+They are also reachable over HTTP, which is how a serverless host's scheduler calls them — and
+how you run one now without waiting for the next tick.
+
+```bash
+BASE=https://your-deployment
+curl -s -H "Authorization: Bearer $CRON_SECRET" "$BASE/internal/jobs/sla"
+curl -s -H "Authorization: Bearer $CRON_SECRET" "$BASE/internal/jobs/purge"
+```
+
+Each answers with what it did, so the response is the audit trail:
+
+```json
+{ "success": true, "message": "sla job finished", "data": { "escalated": 3, "autoClosed": 1 } }
+```
+
+The secret is compared in constant time and an unset `CRON_SECRET` refuses everyone, so on a
+host that runs the cron in-process you can simply leave it empty and the endpoints stay shut.
+
+**The purge deletes and anonymises.** Read `src/jobs/purge.ts` before running it against
+production out of schedule; it is idempotent, but it is not reversible.

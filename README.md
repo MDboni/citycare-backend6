@@ -124,6 +124,8 @@ is missing.
 | `CLOUDINARY_CLOUD_NAME` `CLOUDINARY_API_KEY` `CLOUDINARY_API_SECRET` | – | uploads return 503 when absent |
 | `SSL_STORE_ID` `SSL_STORE_PASSWORD` `SSL_IS_LIVE` | – | payments return 503 when absent |
 | `GOOGLE_CLIENT_ID` `GOOGLE_CLIENT_SECRET` `GOOGLE_CALLBACK_URL` | – | Google login is disabled when absent |
+| `RATE_LIMIT_GLOBAL_MAX` `RATE_LIMIT_AUTH_MAX` | – | defaults `100` and `5`; raise them for a demo |
+| `CRON_SECRET` | – | bearer token for `/internal/jobs/*`; empty rejects every caller |
 | `ADMIN_EMAIL` `ADMIN_PASSWORD` `SUPER_ADMIN_EMAIL` | – | used by the seed script only |
 
 Generate each secret separately — never reuse one:
@@ -231,6 +233,8 @@ More in [`docs/database.md`](docs/database.md).
 ## Folder structure
 
 ```
+api/
+  index.ts           serverless entry — imports the built app, never src/server.ts
 prisma/
   schema/            9 .prisma files, merged by Prisma
   migrations/        init + db_constraints (raw SQL)
@@ -250,6 +254,7 @@ src/
   jobs/              slaChecker, purge, index (node-cron)
   types/             express augmentation, sslcommerz-lts declaration
 tests/               unit + integration (Vitest + Supertest)
+vercel.json          serverless build, routing and cron schedule
 docs/                architecture, database, auth-flow, payment-flow, runbook, ADRs,
                      postman-guide, openapi.yaml, Postman collection
 ```
@@ -331,7 +336,19 @@ Run through `docs/security-tests.md` for the ten checks and their results.
 | `runSlaCheck` | hourly | escalates overdue open complaints (level 1 → 2 after 24 h → 3 after 96 h), notifies admins and the department, and auto-closes complaints resolved more than 7 days ago with no feedback |
 | `runPurge` | daily 03:15 UTC | deletes SecurityEvents > 90 d, expired idempotency keys, EmailLogs > 30 d, and anonymises users soft-deleted more than 30 days ago while keeping their complaints and payments |
 
-Both are exported, so you can trigger them by hand:
+`node-cron` needs a process that stays alive, which a serverless host does not have. The same
+two functions are therefore also reachable over HTTP, so a platform scheduler can call them:
+
+| Endpoint | Runs |
+| --- | --- |
+| `GET` or `POST /internal/jobs/sla` | `runSlaCheck` |
+| `GET` or `POST /internal/jobs/purge` | `runPurge` |
+
+Both require `Authorization: Bearer $CRON_SECRET`, compared in constant time. An unset
+`CRON_SECRET` rejects every caller — the right default on a host that already runs the cron
+in-process. One implementation, two triggers; nothing is duplicated.
+
+They are also exported for a REPL or a script:
 
 ```ts
 import { runSlaCheck, runPurge } from "@/jobs/index.js";
@@ -369,6 +386,17 @@ Any Node host works. On Render, as a web service:
 - Run `pnpm run db:seed` once against the production database.
 - Point an uptime monitor at `/health` every 5 minutes.
 
+### Vercel
+
+The repository ships `vercel.json`, `.vercelignore` and `api/index.ts`, so a serverless deploy
+needs no code changes — only environment variables and one migration run. The steps, the limits
+the platform imposes, and how to verify the result are in
+[`docs/deploy-vercel.md`](docs/deploy-vercel.md).
+
+What differs from a long-running host: `api/index.ts` is the entry instead of `src/server.ts`,
+the cron runs as two scheduled HTTP calls rather than in-process, and the SLA check runs daily
+instead of hourly (the Hobby plan allows one run per job per day).
+
 **Testing gateway callbacks locally:** SSLCommerz has to reach your machine, so expose it with
 `ngrok http 5000` and set `BACKEND_URL` to the ngrok URL before calling `/payments/initiate`.
 
@@ -378,8 +406,10 @@ Any Node host works. On Render, as a web service:
 
 - **No Docker.** Run it with `pnpm` against a hosted Postgres and Redis.
 - **Payments are sandbox-only** unless `SSL_IS_LIVE=true` and live store credentials are set.
-- **Rate limiter state is per-instance** (in memory). Behind several instances each one keeps
-  its own counters; a shared Redis store would be the next step.
+- **Rate limiter counters live in Redis** when `REDIS_URL` or `REDIS_HOST` is set, so several
+  instances share one budget. Without Redis — or while it is unreachable — each instance falls
+  back to its own in-memory counters and logs a warning. Degraded, not off: the API keeps
+  answering rather than turning a Redis blip into a wall of 500s.
 - **The auth limiter fires before the account lockout.** Five failed logins from one IP hit the
   `429` before the per-account `423 ACCOUNT_LOCKED` becomes visible. Both controls exist; the
   IP budget is simply the tighter one.

@@ -1,7 +1,7 @@
 # Database
 
-PostgreSQL via Prisma 7. The schema is split across nine files in `prisma/schema/`, which Prisma
-merges into one model set.
+PostgreSQL via Prisma 7. The schema is split across the ten files below in `prisma/schema/`,
+which Prisma merges into one model set.
 
 | File | Models |
 | --- | --- |

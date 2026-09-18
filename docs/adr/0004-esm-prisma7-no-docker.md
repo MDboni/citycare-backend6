@@ -34,7 +34,7 @@ well. Docker was dropped because the user asked for a plain `pnpm run dev` workf
 - `pnpm run build` runs `tsc` and then `tsc-alias --resolve-full-paths`, which rewrites the `@/`
   aliases to relative specifiers in `dist/`.
 - `prisma.config.ts` holds the datasource URL and points at the `prisma/schema` folder, so the
-  schema can be split across nine files.
+  schema can be split across ten files.
 - The generated client lives in `src/generated/prisma` and is git-ignored; `prisma generate`
   runs as the first step of every build.
 - Everything else in the specification — architecture, response envelope, security controls,

@@ -22,7 +22,7 @@ First complete build of the CityCare backend.
 - `/health`, `/ready` (Postgres + Redis) and `/metrics` behind an ADMIN token.
 
 **Database**
-- 29 Prisma models and 11 enums, split across nine schema files.
+- 29 Prisma models and 11 enums, split across ten schema files.
 - A raw SQL migration adding CHECK constraints, partial unique indexes, trigram search indexes,
   a partial index for the SLA cron, and an append-only trigger on `AuditLog`.
 - An idempotent seed: super admin, 3 officers, 5 citizens, 2 zones, 10 wards, 4 departments,

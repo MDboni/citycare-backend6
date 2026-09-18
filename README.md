@@ -184,7 +184,9 @@ See [`docs/architecture.md`](docs/architecture.md) for the longer version.
 
 ## Data model
 
-29 models across nine schema files in `prisma/schema/`. Prisma merges them automatically.
+29 models and 11 enums, split across ten files in `prisma/schema/` — eight hold models, one
+holds the enums, and `schema.prisma` holds the generator and datasource. Prisma merges them
+automatically.
 
 ```mermaid
 erDiagram
@@ -236,7 +238,7 @@ More in [`docs/database.md`](docs/database.md).
 api/
   index.ts           serverless entry — imports the built app, never src/server.ts
 prisma/
-  schema/            9 .prisma files, merged by Prisma
+  schema/            10 .prisma files, merged by Prisma
   migrations/        init + db_constraints (raw SQL)
   seed.ts            idempotent seed
 src/
@@ -282,7 +284,7 @@ copy-pasting.
 | Notification | list, read, read-all |
 | Admin | users, officers, role, status, sessions, admins, restore, dashboard-stats, audit-logs, security-events, reports/sla, reports/complaints.csv, settings |
 | Officer | `/officer/stats` |
-| Ops | `/health`, `/ready`, `/metrics` (admin token), `/api/v1/docs` |
+| Ops | `/health`, `/ready`, `/metrics` (admin token), `/api/v1/docs`, `/internal/jobs/sla`, `/internal/jobs/purge` (both `CRON_SECRET`) |
 
 **Conventions.** Plural kebab-case nouns; verbs only as sub-actions (`/complaints/:id/assign`).
 JSON fields camelCase, enums UPPER_SNAKE, ids UUID, money as a string, dates ISO 8601 UTC.

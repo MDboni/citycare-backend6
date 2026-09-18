@@ -13,6 +13,13 @@ coverage
 .env.*
 !.env.example
 
+# secret dumps written for a hosting dashboard. They hold the same values as
+# .env but not the name, so the rules above miss them and `git add -A` would
+# commit every production secret in one go.
+*env-production*
+vercel-env*
+*.env.txt
+
 # prisma generated client
 /src/generated
 

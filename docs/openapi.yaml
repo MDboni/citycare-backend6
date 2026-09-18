@@ -1,0 +1,1528 @@
+openapi: 3.1.0
+
+info:
+  title: CityCare API
+  version: 1.0.0
+  description: |
+    City complaint and service platform.
+
+    Every response uses the same envelope:
+
+    ```jsonc
+    // success
+    { "success": true, "message": "…", "data": {}, "meta": {} }
+    // error
+    { "success": false, "message": "…",
+      "errors": [{ "field": "…", "code": "…", "message": "…" }], "requestId": "…" }
+    ```
+
+    Three roles: `CITIZEN`, `OFFICER`, `ADMIN`. A super admin is an `ADMIN` with
+    `isSuperAdmin = true` — never a fourth role, and never a claim in a token.
+  license:
+    name: ISC
+
+servers:
+  - url: http://localhost:5000/api/v1
+    description: Local
+  - url: https://citycare-api.onrender.com/api/v1
+    description: Production
+
+tags:
+  - name: Auth
+  - name: User
+  - name: Master data
+  - name: Complaint
+  - name: Service request
+  - name: Payment
+  - name: Notification
+  - name: Admin
+  - name: Officer
+  - name: Ops
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    Limit:
+      name: limit
+      in: query
+      description: Capped at 100.
+      schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+    SortBy:
+      name: sortBy
+      in: query
+      description: Must be in the module whitelist; anything else is a 400.
+      schema: { type: string }
+    SortOrder:
+      name: sortOrder
+      in: query
+      schema: { type: string, enum: [asc, desc], default: desc }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      description: Same key + same body replays the stored response; a different body is 422.
+      schema: { type: string, maxLength: 255 }
+
+  schemas:
+    Success:
+      type: object
+      required: [success, message, data]
+      properties:
+        success: { type: boolean, const: true }
+        message: { type: string }
+        data: {}
+        meta:
+          type: object
+          properties:
+            page: { type: integer }
+            limit: { type: integer }
+            total: { type: integer }
+            totalPages: { type: integer }
+
+    Error:
+      type: object
+      required: [success, message, errors]
+      properties:
+        success: { type: boolean, const: false }
+        message: { type: string }
+        requestId: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+
+    Tokens:
+      type: object
+      properties:
+        twoFactorRequired: { type: boolean }
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        deviceToken: { type: string }
+        user:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+            email: { type: string }
+            role: { type: string, enum: [CITIZEN, OFFICER, ADMIN] }
+
+    Challenge:
+      type: object
+      properties:
+        twoFactorRequired: { type: boolean, const: true }
+        challengeId: { type: string }
+        email: { type: string, description: Masked, example: "c*****1@citycare.com" }
+        expiresInSec: { type: integer }
+
+    Complaint:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        trackingId: { type: string, example: CC-2026-000021 }
+        title: { type: string }
+        description: { type: string }
+        status:
+          type: string
+          enum: [SUBMITTED, UNDER_REVIEW, ASSIGNED, IN_PROGRESS, RESOLVED, CLOSED, REOPENED, REJECTED, CANCELLED]
+        priority: { type: string, enum: [LOW, MEDIUM, HIGH, URGENT] }
+        address: { type: string }
+        latitude: { type: number, nullable: true }
+        longitude: { type: number, nullable: true }
+        slaDueAt: { type: string, format: date-time }
+        isEscalated: { type: boolean }
+        upvoteCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+
+  responses:
+    BadRequest:
+      description: Validation failed, or a wrong or expired OTP
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Unauthorized:
+      description: Token missing, expired, revoked, or bad credentials
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Forbidden:
+      description: Wrong role, not the owner, blocked, or super admin only
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    NotFound:
+      description: No such record or route
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Conflict:
+      description: State conflict (INVALID_TRANSITION, DUPLICATE_COMPLAINT, ALREADY_PAID, LAST_SUPER_ADMIN, CONFLICT)
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    TooMany:
+      description: Rate limited or OTP cooldown
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Ok:
+      description: Success
+      content: { application/json: { schema: { $ref: "#/components/schemas/Success" } } }
+    Created:
+      description: Created
+      content: { application/json: { schema: { $ref: "#/components/schemas/Success" } } }
+
+paths:
+  # ---------------------------------------------------------------- Auth ----
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Start signup (nothing is written to PostgreSQL yet)
+      security: []
+      description: |
+        Stores the pending signup in Redis for 10 minutes and emails a 6-digit OTP.
+        The schema is strict: an unknown key such as `role` is a 400.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, email, password]
+              properties:
+                name: { type: string, minLength: 2, maxLength: 80 }
+                email: { type: string, format: email }
+                password:
+                  type: string
+                  minLength: 10
+                  description: Upper, lower, digit and symbol; must not contain the name or email.
+                phone: { type: string, maxLength: 20 }
+      responses:
+        "202": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooMany" }
+
+  /auth/verify-otp:
+    post:
+      tags: [Auth]
+      summary: Verify the signup OTP and create the account
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, otp]
+              properties:
+                email: { type: string, format: email }
+                otp: { type: string, pattern: "^[0-9]{6}$" }
+      responses:
+        "201":
+          description: Account created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Success"
+                  - type: object
+                    properties: { data: { $ref: "#/components/schemas/Tokens" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooMany" }
+
+  /auth/resend-otp:
+    post:
+      tags: [Auth]
+      summary: Resend the signup OTP (an unknown email gets the same answer)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email]
+              properties: { email: { type: string, format: email } }
+      responses:
+        "202": { $ref: "#/components/responses/Ok" }
+        "429": { $ref: "#/components/responses/TooMany" }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in — 200 with tokens, or 202 with a two-factor challenge
+      security: []
+      description: ADMIN and OFFICER always receive a challenge, whatever `twoFactorEnabled` says.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+                deviceToken: { type: string, description: Trusted device token (citizens only) }
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Success"
+                  - type: object
+                    properties: { data: { $ref: "#/components/schemas/Tokens" } }
+        "202":
+          description: Two-factor verification required
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Success"
+                  - type: object
+                    properties: { data: { $ref: "#/components/schemas/Challenge" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "423":
+          description: Account temporarily locked
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "429": { $ref: "#/components/responses/TooMany" }
+
+  /auth/login/verify-otp:
+    post:
+      tags: [Auth]
+      summary: Complete the two-factor challenge
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [challengeId, otp]
+              properties:
+                challengeId: { type: string, minLength: 64, maxLength: 64 }
+                otp: { type: string, pattern: "^[0-9]{6}$" }
+                trustDevice: { type: boolean, default: false }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/login/resend-otp:
+    post:
+      tags: [Auth]
+      summary: Resend the login OTP (max 3 per challenge, 60 s apart)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [challengeId]
+              properties: { challengeId: { type: string } }
+      responses:
+        "202": { $ref: "#/components/responses/Ok" }
+        "429": { $ref: "#/components/responses/TooMany" }
+
+  /auth/refresh-token:
+    post:
+      tags: [Auth]
+      summary: Rotate the refresh token
+      security: []
+      description: Replaying a revoked token revokes every session of that user.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties: { refreshToken: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Log out and denylist the current access token
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/logout-all:
+    post:
+      tags: [Auth]
+      summary: Revoke every session of the current user
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /auth/sessions:
+    get:
+      tags: [Auth]
+      summary: List active sessions
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /auth/sessions/{id}:
+    delete:
+      tags: [Auth]
+      summary: Revoke one of your own sessions
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /auth/2fa:
+    patch:
+      tags: [Auth]
+      summary: Turn two-factor on or off (citizens only)
+      description: Call once with the password to get a challenge, then again with `challengeId` and `otp`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [enabled, password]
+              properties:
+                enabled: { type: boolean }
+                password: { type: string }
+                challengeId: { type: string }
+                otp: { type: string, pattern: "^[0-9]{6}$" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "202": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /auth/google:
+    get:
+      tags: [Auth]
+      summary: Redirect to the Google consent screen
+      security: []
+      responses: { "302": { description: Redirect to Google } }
+
+  /auth/google/callback:
+    get:
+      tags: [Auth]
+      summary: Google callback — redirects back to the client
+      security: []
+      responses: { "302": { description: Redirect to CLIENT_URL/auth/callback } }
+
+  /auth/google/token:
+    post:
+      tags: [Auth]
+      summary: Sign in with a Google id token (Postman friendly)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [idToken]
+              properties: { idToken: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "202": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Email a reset link (the answer never reveals whether the account exists)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email]
+              properties: { email: { type: string, format: email } }
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Set a new password and revoke every session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string, minLength: 10 }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /auth/change-password:
+    patch:
+      tags: [Auth]
+      summary: Change your password and revoke every session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string }
+                newPassword: { type: string, minLength: 10 }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  # ---------------------------------------------------------------- User ----
+  /users/me:
+    get:
+      tags: [User]
+      summary: Your profile
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+    patch:
+      tags: [User]
+      summary: Update name, phone or ward
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name: { type: string }
+                phone: { type: string }
+                wardId: { type: string, format: uuid }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    delete:
+      tags: [User]
+      summary: Soft-delete your account (anonymised after 30 days)
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+
+  /users/me/avatar:
+    patch:
+      tags: [User]
+      summary: Upload an avatar (jpg, png or webp, 5 MB, magic-byte checked)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties: { avatar: { type: string, format: binary } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /users/me/export:
+    get:
+      tags: [User]
+      summary: Everything we hold about you, as JSON
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+
+  # --------------------------------------------------------- Master data ----
+  /departments:
+    get:
+      tags: [Master data]
+      summary: List departments (public, cached 1 h)
+      security: []
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+    post:
+      tags: [Master data]
+      summary: Create a department (ADMIN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name: { type: string }
+                email: { type: string, format: email }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /departments/{id}:
+    patch:
+      tags: [Master data]
+      summary: Update a department (ADMIN)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name: { type: string }
+                email: { type: string, format: email }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Master data]
+      summary: Soft-delete a department (ADMIN)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /categories:
+    get:
+      tags: [Master data]
+      summary: List categories with their SLA hours (public, cached)
+      security: []
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+    post:
+      tags: [Master data]
+      summary: Create a category (ADMIN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, departmentId]
+              properties:
+                name: { type: string }
+                departmentId: { type: string, format: uuid }
+                slaHours: { type: integer, default: 72 }
+                defaultPriority: { type: string, enum: [LOW, MEDIUM, HIGH, URGENT] }
+      responses: { "201": { $ref: "#/components/responses/Created" } }
+
+  /categories/{id}:
+    patch:
+      tags: [Master data]
+      summary: Update a category (ADMIN; an SLA change is audit logged)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name: { type: string }
+                departmentId: { type: string, format: uuid }
+                slaHours: { type: integer }
+                defaultPriority: { type: string, enum: [LOW, MEDIUM, HIGH, URGENT] }
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+    delete:
+      tags: [Master data]
+      summary: Soft-delete a category (ADMIN; refused while complaints are open)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /wards:
+    get:
+      tags: [Master data]
+      summary: List wards (public, cached)
+      security: []
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+    post:
+      tags: [Master data]
+      summary: Create a ward (ADMIN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [number, name]
+              properties:
+                number: { type: integer }
+                name: { type: string }
+                zoneId: { type: string, format: uuid }
+      responses: { "201": { $ref: "#/components/responses/Created" } }
+
+  /wards/{id}:
+    patch:
+      tags: [Master data]
+      summary: Update a ward (ADMIN)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                number: { type: integer }
+                name: { type: string }
+                zoneId: { type: string, format: uuid }
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+
+  /zones:
+    get:
+      tags: [Master data]
+      summary: List zones with their wards (public, cached)
+      security: []
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+    post:
+      tags: [Master data]
+      summary: Create a zone (ADMIN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties: { name: { type: string } }
+      responses: { "201": { $ref: "#/components/responses/Created" } }
+
+  /service-types:
+    get:
+      tags: [Master data]
+      summary: List payable services and their fees (public, cached)
+      security: []
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+    post:
+      tags: [Master data]
+      summary: Create a service type (ADMIN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, fee]
+              properties:
+                name: { type: string }
+                fee: { type: string, example: "2500.00", description: Money is a string, never a float }
+                isActive: { type: boolean, default: true }
+      responses: { "201": { $ref: "#/components/responses/Created" } }
+
+  /service-types/{id}:
+    patch:
+      tags: [Master data]
+      summary: Update a service type (ADMIN)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name: { type: string }
+                fee: { type: string }
+                isActive: { type: boolean }
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+
+  # ----------------------------------------------------------- Complaint ----
+  /complaints:
+    post:
+      tags: [Complaint]
+      summary: Report a problem (CITIZEN)
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      description: |
+        Returns a tracking id like `CC-2026-000021` and an SLA due date derived from the
+        category. A second identical report from the same citizen within 24 hours is a 409.
+        When coordinates are supplied, an open complaint of the same category within 100 m is
+        reported in `data.possibleDuplicate` — a hint, not a block.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [title, description, categoryId, wardId, address]
+              properties:
+                title: { type: string, minLength: 5, maxLength: 150 }
+                description: { type: string, minLength: 10, maxLength: 5000 }
+                categoryId: { type: string, format: uuid }
+                wardId: { type: string, format: uuid }
+                address: { type: string }
+                latitude: { type: number, minimum: -90, maximum: 90 }
+                longitude: { type: number, minimum: -180, maximum: 180 }
+            example:
+              title: Road e boro gorto
+              description: Mirpur 10 golchottor er pashe 3 foot gorto, rickshaw ulte jacche
+              categoryId: 2d60fe54-b4c4-4d68-b34b-1e7ab88e5bd0
+              wardId: 5777c481-43f6-4cb3-a4bd-46c2c38f25d8
+              address: Mirpur 10, Dhaka
+              latitude: 23.8069
+              longitude: 90.3687
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Success"
+                  - type: object
+                    properties: { data: { $ref: "#/components/schemas/Complaint" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422":
+          description: Idempotency key reused with a different body
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    get:
+      tags: [Complaint]
+      summary: List complaints (ADMIN sees all, OFFICER sees their department)
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/SortBy"
+        - $ref: "#/components/parameters/SortOrder"
+        - { name: status, in: query, schema: { type: string }, description: "Comma separated, e.g. ASSIGNED,IN_PROGRESS" }
+        - { name: priority, in: query, schema: { type: string, enum: [LOW, MEDIUM, HIGH, URGENT] } }
+        - { name: wardId, in: query, schema: { type: string, format: uuid } }
+        - { name: categoryId, in: query, schema: { type: string, format: uuid } }
+        - { name: isEscalated, in: query, schema: { type: string, enum: ["true", "false"] } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /complaints/my:
+    get:
+      tags: [Complaint]
+      summary: Your own complaints (CITIZEN)
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+
+  /complaints/my-assigned:
+    get:
+      tags: [Complaint]
+      summary: Complaints assigned to you (OFFICER)
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+
+  /complaints/search:
+    get:
+      tags: [Complaint]
+      summary: Search, scoped by role (Bangla-safe, trigram backed)
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+
+  /complaints/nearby:
+    get:
+      tags: [Complaint]
+      summary: Open complaints near a point
+      parameters:
+        - { name: lat, in: query, required: true, schema: { type: number } }
+        - { name: lng, in: query, required: true, schema: { type: number } }
+        - { name: radiusKm, in: query, schema: { type: number, default: 2, maximum: 50 } }
+        - { name: limit, in: query, schema: { type: integer, default: 50 } }
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+
+  /complaints/track/{trackingId}:
+    get:
+      tags: [Complaint]
+      summary: Public tracking — status and timeline only, no personal data
+      security: []
+      parameters:
+        - { name: trackingId, in: path, required: true, schema: { type: string, pattern: "^CC-\\d{4}-\\d{6}$" } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /complaints/{id}:
+    get:
+      tags: [Complaint]
+      summary: One complaint (owner, assigned officer or ADMIN; internal notes hidden from citizens)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Complaint]
+      summary: Edit your complaint (owner, while it is still SUBMITTED)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                title: { type: string }
+                description: { type: string }
+                address: { type: string }
+                latitude: { type: number }
+                longitude: { type: number }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [Complaint]
+      summary: Soft-delete a complaint (ADMIN)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+
+  /complaints/{id}/status:
+    patch:
+      tags: [Complaint]
+      summary: Move the complaint through the state machine
+      description: |
+        The transition map decides which role may make which move. Anything else is
+        `409 INVALID_TRANSITION`. `RESOLVED` requires at least one `RESOLUTION_PROOF`
+        attachment. `REJECTED` requires a note. Two concurrent calls give one 200 and one 409.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [UNDER_REVIEW, ASSIGNED, IN_PROGRESS, RESOLVED, CLOSED, REOPENED, REJECTED, CANCELLED]
+                note: { type: string, maxLength: 500 }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /complaints/{id}/assign:
+    post:
+      tags: [Complaint]
+      summary: Assign or reassign an officer (ADMIN)
+      description: "Either `officerId`, or `auto: true` to pick the least-loaded active officer of the category's department."
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                officerId: { type: string, format: uuid }
+                auto: { type: boolean }
+                reason: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /complaints/{id}/cancel:
+    post:
+      tags: [Complaint]
+      summary: Cancel your complaint (owner, while SUBMITTED)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties: { note: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /complaints/{id}/reopen:
+    post:
+      tags: [Complaint]
+      summary: Reopen a resolved complaint (owner, within 7 days, at most twice)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties: { note: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /complaints/{id}/history:
+    get:
+      tags: [Complaint]
+      summary: Full status history
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+
+  /complaints/{id}/attachments:
+    post:
+      tags: [Complaint]
+      summary: Upload evidence (owner) or resolution proof (assigned officer)
+      description: jpg, png or webp, 5 MB, magic-byte checked, at most 5 per complaint.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+                kind: { type: string, enum: [EVIDENCE, RESOLUTION_PROOF] }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /complaints/{id}/comments:
+    get:
+      tags: [Complaint]
+      summary: Comments (internal notes are invisible to citizens)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+    post:
+      tags: [Complaint]
+      summary: Add a comment (HTML is stripped before storage)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [body]
+              properties:
+                body: { type: string, maxLength: 2000 }
+                isInternal: { type: boolean, default: false, description: OFFICER and ADMIN only }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /complaints/{id}/upvote:
+    post:
+      tags: [Complaint]
+      summary: Upvote (once per citizen; ten upvotes raise the priority one step)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /complaints/{id}/feedback:
+    post:
+      tags: [Complaint]
+      summary: Rate a resolved complaint (owner, once; rating a RESOLVED one closes it)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [rating]
+              properties:
+                rating: { type: integer, minimum: 1, maximum: 5 }
+                comment: { type: string, maxLength: 1000 }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  # ----------------------------------------------------- Service request ----
+  /service-requests:
+    post:
+      tags: [Service request]
+      summary: Apply for a paid service (CITIZEN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [serviceTypeId]
+              properties:
+                serviceTypeId: { type: string, format: uuid }
+                details: { type: object, additionalProperties: true }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    get:
+      tags: [Service request]
+      summary: List all requests (ADMIN, OFFICER)
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - { name: status, in: query, schema: { type: string } }
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+
+  /service-requests/my:
+    get:
+      tags: [Service request]
+      summary: Your own requests (CITIZEN)
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+
+  /service-requests/{id}:
+    get:
+      tags: [Service request]
+      summary: One request (owner, OFFICER or ADMIN)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /service-requests/{id}/status:
+    patch:
+      tags: [Service request]
+      summary: Process a paid request (OFFICER, ADMIN)
+      description: "PAID → PROCESSING → COMPLETED or REJECTED. Anything else is a 409."
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties:
+                status: { type: string, enum: [PROCESSING, COMPLETED, REJECTED] }
+                note: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /service-requests/{id}/documents:
+    post:
+      tags: [Service request]
+      summary: Upload a supporting document (owner)
+      description: Stored as a Cloudinary `authenticated` asset; the URL alone is useless without a signature.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                document: { type: string, format: binary }
+                label: { type: string }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /service-requests/{id}/documents/{docId}:
+    get:
+      tags: [Service request]
+      summary: A 10-minute signed link (owner, processing officer or ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - { name: docId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ------------------------------------------------------------- Payment ----
+  /payments/initiate:
+    post:
+      tags: [Payment]
+      summary: Start a payment (CITIZEN)
+      description: The amount always comes from `serviceType.fee`, never from the client.
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [serviceRequestId]
+              properties: { serviceRequestId: { type: string, format: uuid } }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "502":
+          description: Gateway error
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /payments/success:
+    post:
+      tags: [Payment]
+      summary: Gateway success callback (public, rate limited, always verified)
+      security: []
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                tran_id: { type: string }
+                val_id: { type: string }
+                amount: { type: string }
+                status: { type: string }
+      responses:
+        "302": { description: Redirect to the client result page }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /payments/fail:
+    post:
+      tags: [Payment]
+      summary: Gateway failure callback (public)
+      security: []
+      responses: { "302": { description: Redirect } }
+
+  /payments/cancel:
+    post:
+      tags: [Payment]
+      summary: Gateway cancel callback (public)
+      security: []
+      responses: { "302": { description: Redirect } }
+
+  /payments/ipn:
+    post:
+      tags: [Payment]
+      summary: Gateway IPN webhook (public, idempotent, answers JSON)
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /payments/my:
+    get:
+      tags: [Payment]
+      summary: Your payment history (CITIZEN)
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+
+  /payments/{id}:
+    get:
+      tags: [Payment]
+      summary: One payment (owner or ADMIN)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /payments/{id}/refund:
+    post:
+      tags: [Payment]
+      summary: Request a refund (ADMIN)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties: { reason: { type: string, minLength: 5 } }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /payments/{id}/refund/approve:
+    patch:
+      tags: [Payment]
+      summary: Approve and execute a refund (super admin)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  # -------------------------------------------------------- Notification ----
+  /notifications:
+    get:
+      tags: [Notification]
+      summary: Your notifications, unread first
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - { name: unread, in: query, schema: { type: string, enum: ["true", "false"] } }
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+
+  /notifications/read-all:
+    patch:
+      tags: [Notification]
+      summary: Mark everything read
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+
+  /notifications/{id}/read:
+    patch:
+      tags: [Notification]
+      summary: Mark one read (owner)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # --------------------------------------------------------------- Admin ----
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: List users (ADMIN)
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - { name: role, in: query, schema: { type: string, enum: [CITIZEN, OFFICER, ADMIN] } }
+        - { name: status, in: query, schema: { type: string, enum: [ACTIVE, BLOCKED] } }
+        - { name: q, in: query, schema: { type: string }, description: Name or email }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/officers:
+    post:
+      tags: [Admin]
+      summary: Create an officer (ADMIN; a temporary password is emailed)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, email, departmentId]
+              properties:
+                name: { type: string }
+                email: { type: string, format: email }
+                phone: { type: string }
+                departmentId: { type: string, format: uuid }
+                wardId: { type: string, format: uuid }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /admin/users/{id}/role:
+    patch:
+      tags: [Admin]
+      summary: Change a role (granting ADMIN needs a super admin; every session is revoked)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [role]
+              properties: { role: { type: string, enum: [CITIZEN, OFFICER, ADMIN] } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /admin/users/{id}/status:
+    patch:
+      tags: [Admin]
+      summary: Block or unblock (blocking revokes every session)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties:
+                status: { type: string, enum: [ACTIVE, BLOCKED] }
+                reason: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /admin/users/{id}/sessions:
+    delete:
+      tags: [Admin]
+      summary: Force logout
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/admins:
+    post:
+      tags: [Admin]
+      summary: Create an admin (super admin only; `isSuperAdmin` cannot be set here)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, email, password]
+              properties:
+                name: { type: string }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 10 }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/admins/{id}:
+    delete:
+      tags: [Admin]
+      summary: Remove an admin (super admin only; the last super admin is protected)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /admin/restore/{entity}/{id}:
+    patch:
+      tags: [Admin]
+      summary: Restore a soft-deleted record (super admin only)
+      parameters:
+        - { name: entity, in: path, required: true, schema: { type: string, enum: [complaint, user, category, department] } }
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/dashboard-stats:
+    get:
+      tags: [Admin]
+      summary: Dashboard figures (cached 60 s; computed with groupBy, never in JavaScript)
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+
+  /admin/audit-logs:
+    get:
+      tags: [Admin]
+      summary: Audit trail (an admin sees their own actions, a super admin sees all)
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - { name: actorId, in: query, schema: { type: string, format: uuid } }
+        - { name: action, in: query, schema: { type: string } }
+        - { name: entityType, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+
+  /admin/security-events:
+    get:
+      tags: [Admin]
+      summary: Security events (super admin only)
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - { name: type, in: query, schema: { type: string } }
+        - { name: ip, in: query, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/reports/sla:
+    get:
+      tags: [Admin]
+      summary: Per-department SLA report — total, breached, breach %, average resolution, average rating
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+
+  /admin/reports/complaints.csv:
+    get:
+      tags: [Admin]
+      summary: Streamed CSV export
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: wardId, in: query, schema: { type: string, format: uuid } }
+        - { name: categoryId, in: query, schema: { type: string, format: uuid } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: CSV
+          content: { text/csv: { schema: { type: string } } }
+
+  /admin/settings:
+    get:
+      tags: [Admin]
+      summary: Runtime settings and their defaults
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+
+  /admin/settings/{key}:
+    patch:
+      tags: [Admin]
+      summary: Change a setting (super admin only, audit logged)
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [REOPEN_LIMIT, REOPEN_WINDOW_DAYS, URGENT_SLA_FACTOR, LOGIN_OTP_TTL_SEC, SIGNUP_OTP_TTL_SEC]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [value]
+              properties: { value: { type: number } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  # ------------------------------------------------------------- Officer ----
+  /officer/stats:
+    get:
+      tags: [Officer]
+      summary: Your workload (OFFICER)
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/Forbidden" }

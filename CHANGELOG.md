@@ -1,0 +1,73 @@
+# Changelog
+
+All notable changes to this project are recorded here, following
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.0.0] — 2026-09-18
+
+First complete build of the CityCare backend.
+
+### Added
+
+**Core**
+- Express 5 application with helmet, a CORS whitelist from env, `hpp`, a 1 MB body limit,
+  request ids and pino logging with a redaction list.
+- Zod-validated configuration in `src/config/env.ts`; the process refuses to start without the
+  required secrets.
+- One response envelope for every endpoint, including 404, 429 and 500, and a global error
+  handler that maps Zod, Prisma, JWT and Multer errors onto it.
+- Graceful shutdown with server, database and Redis draining, plus a 10 s hard timeout;
+  `headersTimeout` 15 s and `requestTimeout` 30 s.
+- `/health`, `/ready` (Postgres + Redis) and `/metrics` behind an ADMIN token.
+
+**Database**
+- 29 Prisma models and 11 enums, split across nine schema files.
+- A raw SQL migration adding CHECK constraints, partial unique indexes, trigram search indexes,
+  a partial index for the SLA cron, and an append-only trigger on `AuditLog`.
+- An idempotent seed: super admin, 3 officers, 5 citizens, 2 zones, 10 wards, 4 departments,
+  10 categories, 5 service types, 20 complaints with history, and the system settings.
+
+**Auth**
+- Redis-first signup: nothing reaches PostgreSQL before the emailed OTP is verified.
+- Login with a second factor, mandatory for ADMIN and OFFICER, and trusted devices for citizens.
+- Progressive lockout, a per-IP failure counter, and a dummy bcrypt compare so an unknown email
+  answers in the same way and the same time as a wrong password.
+- Access tokens with a `jti` denylist on logout; refresh tokens hashed, rotated, and revoking
+  every session on reuse.
+- Google OAuth by redirect and by id token, both feeding the same account-creation path.
+- Password reset and change, session listing and revocation, `PATCH /auth/2fa`.
+
+**Domain**
+- Complaints: race-safe tracking ids, SLA due dates, a duplicate guard, a nine-state machine
+  with an optimistic lock, assignment with a department check and least-loaded auto-assign,
+  attachments with a resolution-proof requirement, comments with staff-only internal notes,
+  upvotes that raise priority at ten, feedback that closes a resolved complaint, public tracking
+  and a `nearby` search.
+- Service requests and SSLCommerz payments: one idempotent `confirm()` shared by the redirect
+  and the IPN, every raw callback stored before processing, and a two-person refund flow.
+- Notifications, master data with Redis caching and invalidation, user profile, avatar upload
+  and data export.
+- Admin: user and officer management, super-admin-only actions with a last-super-admin guard,
+  dashboard statistics from `groupBy` only, audit logs, security events, an SLA report and a
+  streamed CSV export.
+
+**Operations**
+- Hourly SLA escalation (levels 1–3) with auto-close after seven days without feedback.
+- Daily retention purge that anonymises accounts deleted more than 30 days ago while keeping
+  their complaints and payments.
+- Prometheus metrics, Swagger UI at `/api/v1/docs`, and PDF receipts.
+
+**Quality**
+- Vitest unit tests for the transition map, pagination, the sort whitelist, OTP hashing, the
+  tracking-id format and the response envelope; Supertest integration tests for the priority
+  cases.
+- GitHub Actions running lint, typecheck, migrations, tests with coverage, `pnpm audit`,
+  gitleaks and the build against Postgres and Redis services.
+- Biome, husky, lint-staged and commitlint.
+
+### Notes
+
+- Runs on ESM with Prisma 7 driver adapters; see
+  [ADR 0004](docs/adr/0004-esm-prisma7-no-docker.md).
+- No Docker: the project runs directly with `pnpm` against hosted Postgres and Redis.

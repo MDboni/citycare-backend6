@@ -1,0 +1,139 @@
+// ---------------------------------------------------------------------------
+// Complaint aggregate — main row plus history / assignment / escalation /
+// attachment / comment / upvote / feedback child tables.
+// Updating the main row never erases the past: the child tables keep it.
+// ---------------------------------------------------------------------------
+
+model ComplaintCounter {
+  year  Int @id
+  value Int @default(0)
+}
+
+model Complaint {
+  id          String          @id @default(uuid())
+  trackingId  String          @unique
+  title       String
+  description String
+  status      ComplaintStatus @default(SUBMITTED)
+  priority    Priority        @default(MEDIUM)
+  address     String
+  latitude    Float?
+  longitude   Float?
+  citizenId   String
+  citizen     User            @relation("CitizenComplaints", fields: [citizenId], references: [id])
+  officerId   String?
+  officer     User?           @relation("OfficerComplaints", fields: [officerId], references: [id])
+  categoryId  String
+  category    Category        @relation(fields: [categoryId], references: [id])
+  wardId      String
+  ward        Ward            @relation(fields: [wardId], references: [id])
+  slaDueAt    DateTime
+  isEscalated Boolean         @default(false)
+  upvoteCount Int             @default(0)
+  reopenCount Int             @default(0)
+  resolvedAt  DateTime?
+  closedAt    DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  deletedAt   DateTime?
+
+  history     ComplaintStatusHistory[]
+  attachments Attachment[]
+  comments    Comment[]
+  upvotes     Upvote[]
+  feedback    Feedback?
+  assignments ComplaintAssignment[]
+  escalations Escalation[]
+
+  @@index([status, priority])
+  @@index([citizenId])
+  @@index([officerId, status])
+  @@index([wardId, categoryId])
+  @@index([slaDueAt])
+  @@index([createdAt])
+}
+
+model ComplaintStatusHistory {
+  id          String           @id @default(uuid())
+  complaintId String
+  complaint   Complaint        @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  fromStatus  ComplaintStatus?
+  toStatus    ComplaintStatus
+  note        String?
+  changedById String? // null = system (cron)
+  createdAt   DateTime         @default(now())
+
+  @@index([complaintId, createdAt])
+}
+
+model ComplaintAssignment {
+  id           String    @id @default(uuid())
+  complaintId  String
+  complaint    Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  officerId    String
+  assignedById String? // null = auto-assign
+  reason       String?
+  assignedAt   DateTime  @default(now())
+  unassignedAt DateTime?
+
+  @@index([complaintId, assignedAt])
+  @@index([officerId, unassignedAt])
+}
+
+model Escalation {
+  id             String    @id @default(uuid())
+  complaintId    String
+  complaint      Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  level          Int // 1 dept head, 2 admin, 3 commissioner
+  reason         String
+  notifiedUserId String?
+  resolvedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@unique([complaintId, level])
+}
+
+model Attachment {
+  id           String         @id @default(uuid())
+  complaintId  String
+  complaint    Complaint      @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  url          String
+  publicId     String
+  kind         AttachmentKind
+  uploadedById String
+  createdAt    DateTime       @default(now())
+
+  @@index([complaintId])
+}
+
+model Comment {
+  id          String    @id @default(uuid())
+  complaintId String
+  complaint   Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  authorId    String
+  body        String
+  isInternal  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  deletedAt   DateTime?
+
+  @@index([complaintId, createdAt])
+}
+
+model Upvote {
+  id          String    @id @default(uuid())
+  complaintId String
+  complaint   Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  userId      String
+  createdAt   DateTime  @default(now())
+
+  @@unique([complaintId, userId])
+}
+
+model Feedback {
+  id          String    @id @default(uuid())
+  complaintId String    @unique
+  complaint   Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  rating      Int // CHECK (rating BETWEEN 1 AND 5) lives in the db_constraints migration
+  comment     String?
+  createdAt   DateTime  @default(now())
+}

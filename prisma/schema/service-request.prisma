@@ -1,0 +1,45 @@
+// ---------------------------------------------------------------------------
+// Paid municipal services — ServiceType (carries the fee) -> ServiceRequest
+// -> uploaded documents (NID / trade licence, stored as Cloudinary
+// "authenticated" assets and served through short-lived signed URLs).
+// ---------------------------------------------------------------------------
+
+model ServiceType {
+  id        String           @id @default(uuid())
+  name      String           @unique
+  fee       Decimal          @db.Decimal(10, 2)
+  isActive  Boolean          @default(true)
+  requests  ServiceRequest[]
+  deletedAt DateTime?
+}
+
+model ServiceRequest {
+  id            String                   @id @default(uuid())
+  referenceNo   String                   @unique
+  citizenId     String
+  citizen       User                     @relation(fields: [citizenId], references: [id])
+  serviceTypeId String
+  serviceType   ServiceType              @relation(fields: [serviceTypeId], references: [id])
+  details       Json?
+  status        ServiceRequestStatus     @default(PENDING_PAYMENT)
+  processedById String?
+  payments      Payment[]
+  documents     ServiceRequestDocument[]
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+  deletedAt     DateTime?
+
+  @@index([citizenId, status])
+}
+
+model ServiceRequestDocument {
+  id               String         @id @default(uuid())
+  serviceRequestId String
+  serviceRequest   ServiceRequest @relation(fields: [serviceRequestId], references: [id], onDelete: Cascade)
+  label            String
+  url              String
+  publicId         String
+  createdAt        DateTime       @default(now())
+
+  @@index([serviceRequestId])
+}

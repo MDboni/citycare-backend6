@@ -1,0 +1,26 @@
+// ---------------------------------------------------------------------------
+// CityCare — Prisma datasource + generator
+// Multi-file schema: every *.prisma file in this folder is merged by Prisma.
+//   schema.prisma          generator + datasource (this file)
+//   enums.prisma           all enums
+//   user.prisma            User
+//   auth.prisma            Session, RefreshToken, TrustedDevice, SecurityEvent
+//   location.prisma        Zone, Ward
+//   organization.prisma    Department, Category
+//   complaint.prisma       Complaint + all complaint child tables
+//   service-request.prisma ServiceType, ServiceRequest, ServiceRequestDocument
+//   payment.prisma         Payment, PaymentEvent, Refund
+//   system.prisma          IdempotencyKey, Notification, EmailLog, AuditLog, SystemSetting
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // The connection string comes from prisma.config.ts (datasource.url)
+}

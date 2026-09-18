@@ -1,0 +1,26 @@
+// ---------------------------------------------------------------------------
+// Organisation master data — Department -> Category (carries the SLA)
+// ---------------------------------------------------------------------------
+
+model Department {
+  id         String     @id @default(uuid())
+  name       String     @unique
+  email      String?
+  categories Category[]
+  officers   User[]
+  deletedAt  DateTime?
+  createdAt  DateTime   @default(now())
+}
+
+model Category {
+  id              String      @id @default(uuid())
+  name            String      @unique
+  departmentId    String
+  department      Department  @relation(fields: [departmentId], references: [id])
+  slaHours        Int         @default(72)
+  defaultPriority Priority    @default(MEDIUM)
+  complaints      Complaint[]
+  deletedAt       DateTime?
+
+  @@index([departmentId])
+}

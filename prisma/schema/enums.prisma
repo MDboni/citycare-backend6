@@ -1,0 +1,87 @@
+// ---------------------------------------------------------------------------
+// Enums — bad strings can never enter the database
+// ---------------------------------------------------------------------------
+
+enum Role {
+  CITIZEN
+  OFFICER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+}
+
+enum AuthProvider {
+  LOCAL
+  GOOGLE
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ComplaintStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  ASSIGNED
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+  REOPENED
+  REJECTED
+  CANCELLED
+}
+
+enum ServiceRequestStatus {
+  PENDING_PAYMENT
+  PAID
+  PROCESSING
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum SecurityEventType {
+  LOGIN_SUCCESS
+  LOGIN_FAILED
+  OTP_SENT
+  OTP_FAILED
+  ACCOUNT_LOCKED
+  NEW_DEVICE
+  TOKEN_REUSE
+  PASSWORD_CHANGED
+  TWO_FA_TOGGLED
+  ROLE_CHANGED
+  SESSION_REVOKED
+}
+
+enum RefundStatus {
+  REQUESTED
+  APPROVED
+  PROCESSED
+  REJECTED
+}
+
+enum EmailStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+enum AttachmentKind {
+  EVIDENCE
+  RESOLUTION_PROOF
+}

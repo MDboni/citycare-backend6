@@ -1,0 +1,65 @@
+// ---------------------------------------------------------------------------
+// Authentication tables — sessions, rotated refresh tokens, trusted devices,
+// and the security event trail.
+// ---------------------------------------------------------------------------
+
+model Session {
+  id            String         @id @default(uuid())
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ip            String?
+  userAgent     String?
+  deviceName    String?
+  lastUsedAt    DateTime       @default(now())
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  revokedReason String? // LOGOUT | PASSWORD_CHANGED | TOKEN_REUSE | ADMIN
+  refreshTokens RefreshToken[]
+  createdAt     DateTime       @default(now())
+
+  @@index([userId, revokedAt])
+}
+
+model RefreshToken {
+  id           String    @id @default(uuid())
+  tokenHash    String    @unique
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId    String
+  session      Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  replacedById String?
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([userId])
+  @@index([sessionId])
+}
+
+model TrustedDevice {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  userAgent String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model SecurityEvent {
+  id        String            @id @default(uuid())
+  userId    String?
+  user      User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  email     String?
+  type      SecurityEventType
+  ip        String?
+  userAgent String?
+  meta      Json?
+  createdAt DateTime          @default(now())
+
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
+  @@index([ip, createdAt])
+}

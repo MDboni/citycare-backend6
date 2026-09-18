@@ -1,0 +1,19 @@
+// ---------------------------------------------------------------------------
+// Geography master data — Zone -> Ward
+// ---------------------------------------------------------------------------
+
+model Zone {
+  id    String @id @default(uuid())
+  name  String @unique
+  wards Ward[]
+}
+
+model Ward {
+  id         String      @id @default(uuid())
+  number     Int         @unique
+  name       String
+  zoneId     String?
+  zone       Zone?       @relation(fields: [zoneId], references: [id])
+  users      User[]
+  complaints Complaint[]
+}

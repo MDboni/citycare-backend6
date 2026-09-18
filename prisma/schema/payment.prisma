@@ -1,0 +1,57 @@
+// ---------------------------------------------------------------------------
+// Payments — every gateway callback and IPN is written to PaymentEvent raw,
+// before any processing, so a mismatch can always be reconstructed later.
+// A partial unique index guarantees one SUCCESS payment per service request.
+// ---------------------------------------------------------------------------
+
+model Payment {
+  id               String         @id @default(uuid())
+  transactionId    String         @unique
+  serviceRequestId String
+  serviceRequest   ServiceRequest @relation(fields: [serviceRequestId], references: [id])
+  userId           String
+  user             User           @relation(fields: [userId], references: [id])
+  amount           Decimal        @db.Decimal(10, 2)
+  currency         String         @default("BDT")
+  status           PaymentStatus  @default(PENDING)
+  gateway          String         @default("SSLCOMMERZ")
+  valId            String?
+  gatewayResponse  Json?
+  paidAt           DateTime?
+  events           PaymentEvent[]
+  refund           Refund?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([userId, status])
+  @@index([serviceRequestId])
+}
+
+model PaymentEvent {
+  id            String   @id @default(uuid())
+  paymentId     String?
+  payment       Payment? @relation(fields: [paymentId], references: [id])
+  transactionId String
+  source        String // SUCCESS_CALLBACK | FAIL_CALLBACK | CANCEL_CALLBACK | IPN
+  payload       Json
+  signatureOk   Boolean  @default(false)
+  processed     Boolean  @default(false)
+  ip            String?
+  createdAt     DateTime @default(now())
+
+  @@index([transactionId, createdAt])
+}
+
+model Refund {
+  id            String       @id @default(uuid())
+  paymentId     String       @unique
+  payment       Payment      @relation(fields: [paymentId], references: [id])
+  amount        Decimal      @db.Decimal(10, 2)
+  reason        String
+  status        RefundStatus @default(REQUESTED)
+  requestedById String
+  approvedById  String?
+  gatewayRefId  String?
+  processedAt   DateTime?
+  createdAt     DateTime     @default(now())
+}

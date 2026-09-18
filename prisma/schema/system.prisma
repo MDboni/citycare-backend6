@@ -1,0 +1,69 @@
+// ---------------------------------------------------------------------------
+// Cross-cutting operational tables — idempotency keys, in-app notifications,
+// the email log, the append-only audit log and runtime settings.
+// ---------------------------------------------------------------------------
+
+model IdempotencyKey {
+  id           String   @id @default(uuid())
+  key          String
+  userId       String
+  endpoint     String
+  requestHash  String
+  responseBody Json?
+  statusCode   Int?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@unique([key, userId, endpoint])
+  @@index([expiresAt])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  isRead    Boolean  @default(false)
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+}
+
+model EmailLog {
+  id        String      @id @default(uuid())
+  to        String
+  template  String // OTP_SIGNUP | OTP_LOGIN | STATUS_UPDATE | RECEIPT | NEW_DEVICE | PASSWORD_RESET
+  status    EmailStatus @default(QUEUED)
+  error     String?
+  attempts  Int         @default(0)
+  createdAt DateTime    @default(now())
+  sentAt    DateTime?
+
+  @@index([status, createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id])
+  action     String // COMPLAINT_STATUS_CHANGED, USER_ROLE_UPDATED, PAYMENT_SUCCESS, PAYMENT_REFUNDED ...
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId, createdAt])
+}
+
+model SystemSetting {
+  key         String   @id // REOPEN_LIMIT, REOPEN_WINDOW_DAYS, URGENT_SLA_FACTOR, LOGIN_OTP_TTL_SEC, SIGNUP_OTP_TTL_SEC
+  value       Json
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+}

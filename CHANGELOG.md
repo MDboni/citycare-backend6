@@ -30,7 +30,9 @@ First complete build of the CityCare backend.
 
 **Auth**
 - Redis-first signup: nothing reaches PostgreSQL before the emailed OTP is verified.
-- Login with a second factor, mandatory for ADMIN and OFFICER, and trusted devices for citizens.
+- Login with a second factor, on by default for every account, opt-out for citizens only, and
+  trusted devices. The seed leaves it off on the demo accounts so they can be evaluated without
+  a mailbox.
 - Progressive lockout, a per-IP failure counter, and a dummy bcrypt compare so an unknown email
   answers in the same way and the same time as a wrong password.
 - Access tokens with a `jti` denylist on logout; refresh tokens hashed, rotated, and revoking

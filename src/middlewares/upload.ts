@@ -4,7 +4,13 @@ import multer from "multer";
 import { ApiError } from "@/utils/ApiError.js";
 import { catchAsync } from "@/utils/catchAsync.js";
 
-export const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+/**
+ * 4 MB rather than the 5 you might expect: serverless hosts cap a request body
+ * at 4.5 MB, and a file rejected at the platform edge never reaches this
+ * middleware, so the caller gets an opaque platform error instead of our 400.
+ * Staying under that line keeps every rejection ours to explain.
+ */
+export const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4 MB
 
 const IMAGE_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
 const DOCUMENT_MIME = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);

@@ -1339,7 +1339,7 @@
                 "avatar"
               ]
             },
-            "description": "form-data, field `avatar`. Pick a JPG, PNG or WebP under 5 MB. The magic bytes are inspected, not the extension — rename an .exe to .jpg and it is a 400. 503 means Cloudinary is not configured."
+            "description": "form-data, field `avatar`. Pick a JPG, PNG or WebP under 4 MB. The magic bytes are inspected, not the extension — rename an .exe to .jpg and it is a 400. 503 means Cloudinary is not configured."
           },
           "event": [
             {
@@ -3807,7 +3807,7 @@
                 }
               ]
             },
-            "description": "form-data, field `document`, plus `label`. PDF, JPG or PNG under 5 MB. Saves {{documentId}}."
+            "description": "form-data, field `document`, plus `label`. PDF, JPG or PNG under 4 MB. Saves {{documentId}}."
           },
           "event": [
             {

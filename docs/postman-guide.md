@@ -431,9 +431,9 @@ Three requests take `multipart/form-data`. In Postman, Body → form-data, set t
 
 | Request | File field | Accepts | Limit |
 | --- | --- | --- | --- |
-| 03 — User → 03. Upload an avatar | `avatar` | JPG, PNG, WebP | 5 MB |
-| 05 — Complaint → Attachments → 01 | `file` (+ `kind`) | JPG, PNG, WebP | 5 MB, 5 per complaint |
-| 06 — Service request → 05 | `document` (+ `label`) | PDF, JPG, PNG | 5 MB |
+| 03 — User → 03. Upload an avatar | `avatar` | JPG, PNG, WebP | 4 MB |
+| 05 — Complaint → Attachments → 01 | `file` (+ `kind`) | JPG, PNG, WebP | 4 MB, 5 per complaint |
+| 06 — Service request → 05 | `document` (+ `label`) | PDF, JPG, PNG | 4 MB |
 
 Every upload is checked twice: the declared MIME type and then the file's real magic bytes.
 Service-request documents are private — the signed link expires in ten minutes, and only the owner

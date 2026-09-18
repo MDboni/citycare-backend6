@@ -47,7 +47,7 @@ tell you when a fix ships and credit you unless you would rather stay anonymous.
 | Tokens | HS256 only, issuer and audience pinned, `jti` denylist on logout, refresh rotation with reuse detection |
 | Privilege | `isSuperAdmin` is never in a token and cannot be set through any API; a database CHECK keeps it on ADMIN rows |
 | Input | Zod `.strict()` on every body; `sanitize-html` on every free-text field |
-| Uploads | MIME whitelist plus magic-byte inspection, 5 MB, random public ids, sensitive files behind 10-minute signed URLs |
+| Uploads | MIME whitelist plus magic-byte inspection, 4 MB, random public ids, sensitive files behind 10-minute signed URLs |
 | Data access | Prisma only; `$queryRawUnsafe` is never used |
 | Audit | Append-only `AuditLog` enforced by a database trigger |
 | Logs | pino redaction for authorization headers, passwords, OTPs and tokens |

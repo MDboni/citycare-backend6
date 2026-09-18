@@ -1,0 +1,4 @@
+# CityCare API. There is no site here to crawl — every path is an endpoint,
+# and the ones worth reading are documented at /api/v1/docs.
+User-agent: *
+Disallow: /

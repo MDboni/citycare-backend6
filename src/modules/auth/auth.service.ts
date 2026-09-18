@@ -77,11 +77,18 @@ const publicUser = (u: {
 	avatarUrl: u.avatarUrl ?? null,
 });
 
-/** OTP flows genuinely need Redis; a clear 503 beats an opaque 500. */
+/**
+ * OTP flows genuinely need Redis; a clear 503 beats an opaque 500.
+ *
+ * An `ApiError` raised inside the callback is a deliberate answer — the 60
+ * second resend cooldown, the hourly send cap — so it passes straight through.
+ * Only an unexpected failure means Redis itself is the problem.
+ */
 const requireRedis = async <T>(fn: () => Promise<T>): Promise<T> => {
 	try {
 		return await fn();
 	} catch (err) {
+		if (err instanceof ApiError) throw err;
 		logger.error({ err }, "redis operation failed");
 		throw new ApiError(503, "Verification service is temporarily unavailable", [
 			{ code: "SERVICE_UNAVAILABLE", message: "Please try again in a moment" },

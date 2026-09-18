@@ -68,6 +68,26 @@ First complete build of the CityCare backend.
   against a running server. The collection chains tokens and ids through test scripts: a login
   stores its access token under the variable its role needs, and every created id is captured for
   the requests that follow.
+- The collection is ordered for clicking through: ten numbered folders with numbered requests
+  inside them, sub-folders for master data, complaints and admin, an assertion on every request so
+  the Tests tab is green or red at a glance, and a ⚠ on the ones that delete something or end your
+  session. Writes create their own rows under timestamped names, so no seeded record is ever
+  renamed or deleted by testing. 80 of 80 assertable requests pass against a seeded database.
+
+### Changed
+
+- `authLimiter` counts **failed** attempts only. What it defends against is guessing, and a
+  successful login is not a guess — counting it locked out the one person who typed the right
+  password while a bot that fails every time got the same five tries either way.
+- The global and auth rate limits are now `RATE_LIMIT_GLOBAL_MAX` and `RATE_LIMIT_AUTH_MAX`,
+  defaulting to the same 100 and 5. A walkthrough of the whole API is about a hundred calls from
+  one IP, which was the entire budget.
+
+### Fixed
+
+- A deliberate `429` raised inside an OTP flow — the 60 second resend cooldown, the hourly send cap
+  — was being swallowed by the Redis wrapper and answered as `503 SERVICE_UNAVAILABLE`. Only an
+  unexpected failure means Redis is the problem; an `ApiError` now passes straight through.
 - GitHub Actions running lint, typecheck, migrations, tests with coverage, `pnpm audit`,
   gitleaks and the build against Postgres and Redis services.
 - Biome, husky, lint-staged and commitlint.

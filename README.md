@@ -314,7 +314,7 @@ with an optimistic lock, so two simultaneous updates produce one `200` and one `
 | Stored XSS | `sanitize-html` with `allowedTags: []` on every free-text field |
 | Uploads | memory storage, MIME whitelist **and** magic-byte check, 5 MB, random public ids |
 | Sensitive files | Cloudinary `authenticated` assets behind 10-minute signed URLs |
-| Rate limits | 100/15 min global, 5/15 min on auth, 10/h on payment initiate, 20/min on callbacks, 30/min on admin |
+| Rate limits | 100/15 min global, 5/15 min on auth (**failed attempts only**), 10/h on payment initiate, 20/min on callbacks, 30/min on admin. The first two are `RATE_LIMIT_GLOBAL_MAX` and `RATE_LIMIT_AUTH_MAX` |
 | Audit | append-only `AuditLog` (database trigger) + `SecurityEvent` |
 | Logs | pino with a redaction list; no stack traces in production responses |
 
@@ -381,6 +381,10 @@ Any Node host works. On Render, as a web service:
 - **The auth limiter fires before the account lockout.** Five failed logins from one IP hit the
   `429` before the per-account `423 ACCOUNT_LOCKED` becomes visible. Both controls exist; the
   IP budget is simply the tighter one.
+- **A full walkthrough needs the limits raised.** Clicking through the whole Postman collection is
+  about a hundred calls from one IP, which is the entire global budget. Set
+  `RATE_LIMIT_GLOBAL_MAX=1000` and `RATE_LIMIT_AUTH_MAX=50` while you demo, and leave the defaults
+  alone in production. See [`docs/postman-guide.md`](docs/postman-guide.md).
 - **Integration tests need their own database** — they truncate.
 - **Search uses `contains`** backed by trigram indexes. Fine at this size; full-text ranking
   would be the upgrade.

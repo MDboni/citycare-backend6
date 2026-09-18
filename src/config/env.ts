@@ -57,6 +57,12 @@ const envSchema = z.object({
 	SMTP_PASS: z.string().default(""),
 	EMAIL_FROM: z.string().default("CityCare <no-reply@citycare.com>"),
 
+	// --- rate limits ---------------------------------------------------------
+	// The defaults are the production posture. Raise them for a demo or a
+	// walkthrough, where one evaluator's IP legitimately makes a hundred calls.
+	RATE_LIMIT_GLOBAL_MAX: z.coerce.number().int().min(1).default(100),
+	RATE_LIMIT_AUTH_MAX: z.coerce.number().int().min(1).default(5),
+
 	// --- seed ---------------------------------------------------------------
 	ADMIN_EMAIL: z.string().default("admin@citycare.com"),
 	ADMIN_PASSWORD: z.string().default("Admin@12345"),

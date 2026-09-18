@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import rateLimit, { type Options } from "express-rate-limit";
+import { env } from "@/config/env.js";
 
 /**
  * Every limiter answers with the standard error envelope — a 429 must not be
@@ -32,21 +33,29 @@ const base = (
 		...extra,
 	});
 
-/** 100 requests / 15 min per IP across the whole API. */
+/** 100 requests / 15 min per IP across the whole API (RATE_LIMIT_GLOBAL_MAX). */
 export const globalLimiter = base(
 	15 * 60_000,
-	100,
+	env.RATE_LIMIT_GLOBAL_MAX,
 	"RATE_LIMITED",
 	"Too many requests, please slow down",
 );
 
-/** Register, login, resend-otp, forgot-password: 5 / 15 min per IP. */
+/**
+ * Register, login, resend-otp, forgot-password: 5 / 15 min per IP
+ * (RATE_LIMIT_AUTH_MAX).
+ *
+ * Only *failed* attempts count. What this limiter defends against is guessing,
+ * and a successful login is not a guess — counting it would lock out the one
+ * person who typed the right password, while a bot that fails every time gets
+ * the same five tries either way.
+ */
 export const authLimiter = base(
 	15 * 60_000,
-	5,
+	env.RATE_LIMIT_AUTH_MAX,
 	"RATE_LIMITED",
 	"Too many attempts, try again in 15 minutes",
-	{ skipSuccessfulRequests: false },
+	{ skipSuccessfulRequests: true },
 );
 
 /** Payment initiate: 10 / hour per IP. */

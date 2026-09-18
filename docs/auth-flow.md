@@ -9,7 +9,7 @@ email address has been proven.
 ```
 POST /auth/register
   ├─ Zod .strict()  (an unknown key such as "role" is a 400)
-  ├─ authLimiter    5 / 15 min per IP
+  ├─ authLimiter    5 failed attempts / 15 min per IP (RATE_LIMIT_AUTH_MAX)
   ├─ email normalised (trim + lowercase)
   ├─ an active user with that email?          → 409 EMAIL_EXISTS
   ├─ otp:cooldown:{email} exists?             → 429 OTP_COOLDOWN

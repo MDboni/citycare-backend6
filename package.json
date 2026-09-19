@@ -73,7 +73,6 @@
 		"rate-limit-redis": "^6.0.1",
 		"sanitize-html": "2.17.5",
 		"sslcommerz-lts": "^1.2.0",
-		"swagger-ui-express": "^5.0.1",
 		"yaml": "^2.9.1",
 		"zod": "^4.4.3"
 	},
@@ -96,7 +95,6 @@
 		"@types/pg": "^8.20.0",
 		"@types/sanitize-html": "^2.16.1",
 		"@types/supertest": "^7.2.1",
-		"@types/swagger-ui-express": "^4.1.8",
 		"@vitest/coverage-v8": "^5.0.1",
 		"husky": "^9.1.7",
 		"lint-staged": "^17.5.1",

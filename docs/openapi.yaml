@@ -24,7 +24,7 @@ info:
 servers:
   - url: http://localhost:5000/api/v1
     description: Local
-  - url: https://citycare-api.onrender.com/api/v1
+  - url: https://citycare-backend6-jxfa.vercel.app/api/v1
     description: Production
 
 tags:

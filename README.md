@@ -10,8 +10,24 @@ Zod 4 · SSLCommerz · Cloudinary · Vitest
 
 ---
 
+## Live
+
+| | |
+| --- | --- |
+| **API** | <https://citycare-backend6-jxfa.vercel.app> |
+| **Interactive docs** (Swagger UI) | <https://citycare-backend6-jxfa.vercel.app/api/v1/docs> |
+| **Health / readiness** | [`/health`](https://citycare-backend6-jxfa.vercel.app/health) · [`/ready`](https://citycare-backend6-jxfa.vercel.app/ready) |
+| **Postman** | [`docs/api/`](docs/api/) — import the collection and the *production* environment |
+
+Sign in with the [demo accounts](#demo-credentials) below. The
+[Postman guide](docs/postman-guide.md) walks the whole API end to end, from reporting a
+complaint to paying for a service.
+
+---
+
 ## Contents
 
+- [Live](#live)
 - [Quick start](#quick-start)
 - [Demo credentials](#demo-credentials)
 - [Scripts](#scripts)
@@ -265,8 +281,9 @@ docs/                architecture, database, auth-flow, payment-flow, runbook, A
 
 ## API
 
-Base path `/api/v1`. Full reference: `docs/openapi.yaml`, served at
-`http://localhost:5000/api/v1/docs`, plus a Postman collection in `docs/api/`.
+Base path `/api/v1`. Full reference: `docs/openapi.yaml`, served as Swagger UI at
+<https://citycare-backend6-jxfa.vercel.app/api/v1/docs> (and at `http://localhost:5000/api/v1/docs`
+when running locally), plus a Postman collection in `docs/api/`.
 
 **Testing it yourself:** [`docs/postman-guide.md`](docs/postman-guide.md) walks through the whole
 API in Postman — import, the three seeded logins, a complaint from report to closed, the payment

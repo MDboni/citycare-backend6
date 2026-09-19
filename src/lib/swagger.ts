@@ -54,12 +54,19 @@ const UI_BASE = `https://cdn.jsdelivr.net/npm/swagger-ui-dist@${UI_VERSION}`;
  * what every other route wants. This one page also needs the CDN above, so it
  * sets its own header — helmet ran earlier in the chain, and the last write to
  * `Content-Security-Policy` is the one the browser reads.
+ *
+ * The source is the CDN's origin, with no path. A CSP source whose path does
+ * not end in "/" has to match the request path exactly, so naming the package
+ * directory here would have allowed that one URL and blocked every file under
+ * it — which is every file the page actually asks for.
  */
+const UI_ORIGIN = "https://cdn.jsdelivr.net";
+
 const DOCS_CSP = [
 	"default-src 'self'",
-	`script-src 'self' 'unsafe-inline' ${UI_BASE}`,
-	`style-src 'self' 'unsafe-inline' ${UI_BASE}`,
-	`font-src 'self' data: ${UI_BASE}`,
+	`script-src 'self' 'unsafe-inline' ${UI_ORIGIN}`,
+	`style-src 'self' 'unsafe-inline' ${UI_ORIGIN}`,
+	`font-src 'self' data: ${UI_ORIGIN}`,
 	"img-src 'self' data: https:",
 	"connect-src 'self'",
 	"object-src 'none'",

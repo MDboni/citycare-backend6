@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
+import { PERMISSION_CATALOGUE, SYSTEM_ROLES } from "../src/config/permissions.js";
 import { PrismaClient } from "../src/generated/prisma/client.js";
 import type { ComplaintStatus, Priority } from "../src/generated/prisma/enums.js";
 
@@ -297,6 +298,65 @@ const main = async () => {
 		update: {},
 	});
 
+	// --- access control ----------------------------------------------------
+	// The catalogue is the source of truth: every code in it exists in the
+	// database after this runs, and a code that has been renamed leaves its old
+	// row behind rather than being deleted, because a role may still point at it.
+	for (const def of PERMISSION_CATALOGUE) {
+		await prisma.permission.upsert({
+			where: { code: def.code },
+			create: {
+				code: def.code,
+				name: def.name,
+				description: def.description,
+				category: def.category,
+				isSystem: true,
+			},
+			// Names and blurbs are ours to correct; isSystem is re-asserted so a
+			// seeded permission cannot be left deletable by an earlier run.
+			update: {
+				name: def.name,
+				description: def.description,
+				category: def.category,
+				isSystem: true,
+			},
+		});
+	}
+
+	const permissionByCode = new Map(
+		(await prisma.permission.findMany({ select: { id: true, code: true } })).map((p) => [
+			p.code,
+			p.id,
+		]),
+	);
+
+	for (const sys of SYSTEM_ROLES) {
+		const role = await prisma.accessRole.upsert({
+			where: { mirrors: sys.role },
+			create: {
+				name: sys.name,
+				description: sys.description,
+				isSystem: true,
+				mirrors: sys.role,
+			},
+			update: { description: sys.description, isSystem: true },
+		});
+
+		const wanted = PERMISSION_CATALOGUE.filter((p) =>
+			(p.defaultRoles as readonly string[]).includes(sys.role),
+		)
+			.map((p) => permissionByCode.get(p.code))
+			.filter((id): id is string => Boolean(id));
+
+		// createMany + skipDuplicates rather than a delete-then-insert: an admin
+		// may have already tuned this role, and a re-seed must not silently undo
+		// their work. Seeding only ever ADDS the defaults back.
+		await prisma.accessRolePermission.createMany({
+			data: wanted.map((permissionId) => ({ roleId: role.id, permissionId })),
+			skipDuplicates: true,
+		});
+	}
+
 	console.log(`
 Seed complete.
 
@@ -304,6 +364,9 @@ Seed complete.
   Officers     officer1@citycare.com … officer3@citycare.com / Officer@12345   (2FA off)
   Citizens     citizen1@citycare.com … citizen5@citycare.com / Citizen@12345
                citizen1 has 2FA off; citizen2-5 need an email OTP
+
+  Access       ${PERMISSION_CATALOGUE.length} permissions, ${SYSTEM_ROLES.length} system roles
+               Staff with no explicit role fall back to the one mirroring their account type
 `);
 };
 

@@ -7,6 +7,7 @@ import { complaintRoutes } from "@/modules/complaint/complaint.route.js";
 import { departmentRoutes } from "@/modules/department/department.route.js";
 import { notificationRoutes } from "@/modules/notification/notification.route.js";
 import { paymentRoutes } from "@/modules/payment/payment.route.js";
+import { rbacRoutes } from "@/modules/rbac/rbac.route.js";
 import { serviceRequestRoutes } from "@/modules/serviceRequest/serviceRequest.route.js";
 import { serviceTypeRoutes } from "@/modules/serviceType/serviceType.route.js";
 import { userRoutes } from "@/modules/user/user.route.js";
@@ -29,6 +30,7 @@ const modules: { path: string; route: Router }[] = [
 	{ path: "/payments", route: paymentRoutes },
 	{ path: "/notifications", route: notificationRoutes },
 	{ path: "/admin", route: adminRoutes },
+	{ path: "/access", route: rbacRoutes },
 	{ path: "/officer", route: officerRoutes },
 ];
 

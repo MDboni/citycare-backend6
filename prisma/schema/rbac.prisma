@@ -1,0 +1,74 @@
+// ---------------------------------------------------------------------------
+// RBAC — named roles carrying named permissions.
+//
+// This sits ON TOP OF the `Role` enum rather than replacing it. The enum still
+// answers "what kind of account is this" (a citizen cannot become staff by
+// being handed a role), while these tables answer "what may this staff member
+// actually do". Replacing the enum would mean every ownership check in every
+// service — all the `where: { citizenId: user.id }` clauses — losing the one
+// thing it relies on.
+//
+// A staff member with no row in UserAccessRole falls back to the system role
+// mirroring their enum role, which is why introducing this changes nobody's
+// access on day one.
+// ---------------------------------------------------------------------------
+
+model Permission {
+  id          String   @id @default(uuid())
+  /// Stable machine name, e.g. "complaints__assign". Routes reference this,
+  /// so it is the one field the UI refuses to edit after creation.
+  code        String   @unique
+  name        String
+  description String?
+  /// Groups the permission in the console's matrix, e.g. "Complaints".
+  category    String
+  /// Seeded permissions are referenced by route guards; deleting one would
+  /// lock everyone out of that endpoint, so the API refuses.
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  roles AccessRolePermission[]
+
+  @@index([category])
+}
+
+model AccessRole {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  /// A system role cannot be renamed or deleted. Its permission set CAN be
+  /// edited — that is the entire point of the screen.
+  isSystem    Boolean  @default(false)
+  /// Set only on the three seeded roles. Marks this as the fallback for staff
+  /// who have not been given an explicit role assignment yet.
+  mirrors     Role?    @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions AccessRolePermission[]
+  users       UserAccessRole[]
+}
+
+model AccessRolePermission {
+  roleId       String
+  permissionId String
+
+  role       AccessRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+model UserAccessRole {
+  userId     String
+  roleId     String
+  assignedAt DateTime @default(now())
+
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role AccessRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+}

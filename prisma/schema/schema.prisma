@@ -11,6 +11,7 @@
 //   service-request.prisma ServiceType, ServiceRequest, ServiceRequestDocument
 //   payment.prisma         Payment, PaymentEvent, Refund
 //   system.prisma          IdempotencyKey, Notification, EmailLog, AuditLog, SystemSetting
+//   rbac.prisma            Permission, AccessRole, AccessRolePermission, UserAccessRole
 // ---------------------------------------------------------------------------
 
 generator client {

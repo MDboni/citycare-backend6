@@ -39,6 +39,7 @@ model User {
   payments           Payment[]
   notifications      Notification[]
   auditLogs          AuditLog[]
+  accessRoles        UserAccessRole[]
 
   @@index([email])
   @@index([role, status])

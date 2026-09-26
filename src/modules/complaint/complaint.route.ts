@@ -1,6 +1,7 @@
 import { Router } from "express";
+import { PERMISSIONS } from "@/config/permissions.js";
 import { auth } from "@/middlewares/auth.js";
-import { authorize } from "@/middlewares/authorize.js";
+import { authorize, requirePermission } from "@/middlewares/authorize.js";
 import { idempotency } from "@/middlewares/idempotency.js";
 import { uploadImage, verifyImage } from "@/middlewares/upload.js";
 import { validateRequest } from "@/middlewares/validateRequest.js";
@@ -26,6 +27,7 @@ complaintRoutes.post(
 complaintRoutes.get(
 	"/",
 	authorize("ADMIN", "OFFICER"),
+	requirePermission(PERMISSIONS.complaints__view_all),
 	validateRequest(V.listComplaintsSchema),
 	C.list,
 );
@@ -52,12 +54,24 @@ complaintRoutes.patch(
 	validateRequest(V.updateComplaintSchema),
 	C.update,
 );
-complaintRoutes.delete("/:id", authorize("ADMIN"), validateRequest(V.complaintIdSchema), C.remove);
+complaintRoutes.delete(
+	"/:id",
+	authorize("ADMIN"),
+	requirePermission(PERMISSIONS.complaints__delete),
+	validateRequest(V.complaintIdSchema),
+	C.remove,
+);
 
 // --- lifecycle -------------------------------------------------------------
 // The transition map decides which role may make which move.
 complaintRoutes.patch("/:id/status", validateRequest(V.changeStatusSchema), C.changeStatus);
-complaintRoutes.post("/:id/assign", authorize("ADMIN"), validateRequest(V.assignSchema), C.assign);
+complaintRoutes.post(
+	"/:id/assign",
+	authorize("ADMIN"),
+	requirePermission(PERMISSIONS.complaints__assign),
+	validateRequest(V.assignSchema),
+	C.assign,
+);
 complaintRoutes.post("/:id/cancel", authorize("CITIZEN"), validateRequest(V.noteSchema), C.cancel);
 complaintRoutes.post("/:id/reopen", authorize("CITIZEN"), validateRequest(V.noteSchema), C.reopen);
 complaintRoutes.get("/:id/history", validateRequest(V.complaintIdSchema), C.history);

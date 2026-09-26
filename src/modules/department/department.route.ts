@@ -1,6 +1,7 @@
 import { Router } from "express";
+import { PERMISSIONS } from "@/config/permissions.js";
 import { auth } from "@/middlewares/auth.js";
-import { authorize } from "@/middlewares/authorize.js";
+import { authorize, requirePermission } from "@/middlewares/authorize.js";
 import { adminLimiter } from "@/middlewares/rateLimiter.js";
 import { validateRequest } from "@/middlewares/validateRequest.js";
 import * as DepartmentController from "@/modules/department/department.controller.js";
@@ -11,7 +12,13 @@ export const departmentRoutes: Router = Router();
 // Public, cached.
 departmentRoutes.get("/", DepartmentController.list);
 
-departmentRoutes.use(auth, authorize("ADMIN"), adminLimiter);
+// authorize keeps this staff-only; requirePermission decides which staff.
+departmentRoutes.use(
+	auth,
+	authorize("ADMIN"),
+	adminLimiter,
+	requirePermission(PERMISSIONS.taxonomy__manage_departments),
+);
 
 departmentRoutes.post("/", validateRequest(V.createDepartmentSchema), DepartmentController.create);
 departmentRoutes.patch(

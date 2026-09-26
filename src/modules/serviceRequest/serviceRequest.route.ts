@@ -1,6 +1,7 @@
 import { Router } from "express";
+import { PERMISSIONS } from "@/config/permissions.js";
 import { auth } from "@/middlewares/auth.js";
-import { authorize } from "@/middlewares/authorize.js";
+import { authorize, requirePermission } from "@/middlewares/authorize.js";
 import { uploadDocument, verifyDocument } from "@/middlewares/upload.js";
 import { validateRequest } from "@/middlewares/validateRequest.js";
 import * as C from "@/modules/serviceRequest/serviceRequest.controller.js";
@@ -25,6 +26,7 @@ serviceRequestRoutes.get(
 serviceRequestRoutes.get(
 	"/",
 	authorize("ADMIN", "OFFICER"),
+	requirePermission(PERMISSIONS.service_requests__view_all),
 	validateRequest(V.listServiceRequestsSchema),
 	C.list,
 );
@@ -32,6 +34,7 @@ serviceRequestRoutes.get("/:id", validateRequest(V.serviceRequestIdSchema), C.ge
 serviceRequestRoutes.patch(
 	"/:id/status",
 	authorize("ADMIN", "OFFICER"),
+	requirePermission(PERMISSIONS.service_requests__process),
 	validateRequest(V.updateServiceRequestStatusSchema),
 	C.updateStatus,
 );

@@ -1,6 +1,7 @@
 import { Router } from "express";
+import { PERMISSIONS } from "@/config/permissions.js";
 import { auth } from "@/middlewares/auth.js";
-import { authorize, superAdminOnly } from "@/middlewares/authorize.js";
+import { authorize, requirePermission, superAdminOnly } from "@/middlewares/authorize.js";
 import { idempotency } from "@/middlewares/idempotency.js";
 import { callbackLimiter, paymentLimiter } from "@/middlewares/rateLimiter.js";
 import { validateRequest } from "@/middlewares/validateRequest.js";
@@ -34,6 +35,7 @@ paymentRoutes.get("/:id", validateRequest(V.paymentIdSchema), C.getById);
 paymentRoutes.post(
 	"/:id/refund",
 	authorize("ADMIN"),
+	requirePermission(PERMISSIONS.payments__refund_request),
 	validateRequest(V.refundRequestSchema),
 	C.requestRefund,
 );
@@ -41,6 +43,7 @@ paymentRoutes.patch(
 	"/:id/refund/approve",
 	authorize("ADMIN"),
 	superAdminOnly,
+	requirePermission(PERMISSIONS.payments__refund_approve),
 	validateRequest(V.paymentIdSchema),
 	C.approveRefund,
 );

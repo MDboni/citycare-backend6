@@ -1,6 +1,7 @@
 import { Router } from "express";
+import { PERMISSIONS } from "@/config/permissions.js";
 import { auth } from "@/middlewares/auth.js";
-import { authorize } from "@/middlewares/authorize.js";
+import { authorize, requirePermission } from "@/middlewares/authorize.js";
 import { adminLimiter } from "@/middlewares/rateLimiter.js";
 import { validateRequest } from "@/middlewares/validateRequest.js";
 import * as ZoneController from "@/modules/zone/zone.controller.js";
@@ -14,6 +15,7 @@ zoneRoutes.post(
 	auth,
 	authorize("ADMIN"),
 	adminLimiter,
+	requirePermission(PERMISSIONS.taxonomy__manage_zones),
 	validateRequest(createZoneSchema),
 	ZoneController.create,
 );

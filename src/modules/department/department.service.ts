@@ -18,6 +18,8 @@ export const list = () =>
 				id: true,
 				name: true,
 				email: true,
+				phone: true,
+				address: true,
 				_count: { select: { categories: true, officers: true } },
 			},
 		}),
@@ -57,8 +59,18 @@ export const update = async (
 			action: AUDIT_ACTIONS.DEPARTMENT_UPDATED,
 			entityType: "Department",
 			entityId: id,
-			before: { name: before.name, email: before.email },
-			after: { name: updated.name, email: updated.email },
+			before: {
+				name: before.name,
+				email: before.email,
+				phone: before.phone,
+				address: before.address,
+			},
+			after: {
+				name: updated.name,
+				email: updated.email,
+				phone: updated.phone,
+				address: updated.address,
+			},
 			ctx: toAuditCtx(ctx),
 		});
 		return updated;

@@ -5,6 +5,8 @@ export const createDepartmentSchema = z.object({
 		.object({
 			name: z.string().trim().min(2).max(80),
 			email: z.string().trim().email().max(254).optional(),
+			phone: z.string().trim().max(30).optional(),
+			address: z.string().trim().max(200).optional(),
 		})
 		.strict(),
 });
@@ -15,6 +17,8 @@ export const updateDepartmentSchema = z.object({
 		.object({
 			name: z.string().trim().min(2).max(80).optional(),
 			email: z.string().trim().email().max(254).optional(),
+			phone: z.string().trim().max(30).optional(),
+			address: z.string().trim().max(200).optional(),
 		})
 		.strict()
 		.refine((v) => Object.keys(v).length > 0, { message: "Nothing to update" }),

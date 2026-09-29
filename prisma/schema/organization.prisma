@@ -5,7 +5,12 @@
 model Department {
   id         String     @id @default(uuid())
   name       String     @unique
+  /// The public desk for this department. All three are optional and all three
+  /// are editable from Taxonomy -> Departments, because the contact page prints
+  /// whatever is here — so a number that changes is a record edit, not a deploy.
   email      String?
+  phone      String?
+  address    String?
   categories Category[]
   officers   User[]
   deletedAt  DateTime?

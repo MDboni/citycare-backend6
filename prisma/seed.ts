@@ -2,8 +2,10 @@ import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
 import { PERMISSION_CATALOGUE, SYSTEM_ROLES } from "../src/config/permissions.js";
+import { redis } from "../src/config/redis.js";
 import { PrismaClient } from "../src/generated/prisma/client.js";
 import type { ComplaintStatus, Priority } from "../src/generated/prisma/enums.js";
+import { invalidateMasterData } from "../src/lib/cache.js";
 
 /**
  * Idempotent seed: every write is an `upsert` keyed on something stable, so
@@ -83,18 +85,53 @@ const main = async () => {
 
 	// --- departments -------------------------------------------------------
 	const departmentSeed = [
-		{ name: "Roads", email: "roads@citycare.com" },
-		{ name: "Waste", email: "waste@citycare.com" },
-		{ name: "Water", email: "water@citycare.com" },
-		{ name: "Electricity", email: "electricity@citycare.com" },
+		{
+			name: "Roads",
+			email: "roads@citycare.com",
+			phone: "+880 2 5566 0101",
+			address: "Roads Division, Nagar Bhaban, Dhaka 1000",
+		},
+		{
+			name: "Waste",
+			email: "waste@citycare.com",
+			phone: "+880 2 5566 0102",
+			address: "Waste Management Cell, Nagar Bhaban, Dhaka 1000",
+		},
+		{
+			name: "Water",
+			email: "water@citycare.com",
+			phone: "+880 2 5566 0103",
+			address: "Water & Drainage Division, Nagar Bhaban, Dhaka 1000",
+		},
+		{
+			name: "Electricity",
+			email: "electricity@citycare.com",
+			phone: "+880 2 5566 0104",
+			address: "Street Lighting Cell, Nagar Bhaban, Dhaka 1000",
+		},
 	];
 	const departments = [];
 	for (const d of departmentSeed) {
+		const existingDepartment = await prisma.department.findUnique({
+			where: { name: d.name },
+			select: { phone: true, address: true },
+		});
 		departments.push(
 			await prisma.department.upsert({
 				where: { name: d.name },
 				create: d,
-				update: { email: d.email },
+				/**
+				 * Fill the gaps, never overwrite. Seed values are a starting
+				 * point, not a source of truth — an admin who corrects a desk
+				 * number from the console keeps that correction the next time
+				 * the seed runs, but a department created before these columns
+				 * existed still picks up a default.
+				 */
+				update: {
+					email: d.email,
+					phone: existingDepartment?.phone ?? d.phone,
+					address: existingDepartment?.address ?? d.address,
+				},
 			}),
 		);
 	}
@@ -357,6 +394,14 @@ const main = async () => {
 		});
 	}
 
+	/**
+	 * The taxonomy endpoints cache for an hour, and seeding writes underneath
+	 * them with Prisma directly — so without this a reseed is invisible to the
+	 * API until the TTL runs out. Found the hard way: new department columns
+	 * were in the database and absent from /departments for an hour.
+	 */
+	await invalidateMasterData();
+
 	console.log(`
 Seed complete.
 
@@ -377,4 +422,6 @@ main()
 	})
 	.finally(async () => {
 		await prisma.$disconnect();
+		// ioredis holds the event loop open, so the seed has to hang up too.
+		await redis.quit().catch(() => redis.disconnect());
 	});

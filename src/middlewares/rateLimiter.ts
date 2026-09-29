@@ -202,3 +202,18 @@ export const callbackLimiter = base(
 
 /** Admin routes: 30 / min. */
 export const adminLimiter = base("admin", 60_000, 30, "RATE_LIMITED", "Too many admin requests");
+
+/**
+ * Public contact form: 5 messages / hour per IP.
+ *
+ * Tighter than auth because there is no password to get right — anyone can POST
+ * a valid body, so volume is the only signal. Five is generous for a person
+ * with something to say and useless to a script.
+ */
+export const contactLimiter = base(
+	"contact",
+	60 * 60_000,
+	5,
+	"RATE_LIMITED",
+	"That is a lot of messages. Try again in an hour.",
+);

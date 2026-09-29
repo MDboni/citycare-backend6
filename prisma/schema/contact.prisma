@@ -1,0 +1,31 @@
+// ---------------------------------------------------------------------------
+// Public contact form.
+//
+// Deliberately NOT a complaint. A complaint carries a ward, a category, an SLA
+// clock and an owner; this carries none of those, because the person writing it
+// has not told us enough to route it and may not have an account at all. Mixing
+// the two would put unroutable messages into the queue officers work from and
+// start a clock nobody can meet.
+// ---------------------------------------------------------------------------
+
+model ContactMessage {
+  id      String @id @default(uuid())
+  name    String
+  email   String
+  phone   String?
+  subject String
+  message String
+  status      ContactMessageStatus @default(NEW)
+  handledById String?
+  handledBy   User?                @relation(fields: [handledById], references: [id], onDelete: SetNull)
+  handledAt   DateTime?
+  note        String?
+  ip        String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([email])
+}

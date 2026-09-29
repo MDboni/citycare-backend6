@@ -194,6 +194,15 @@ export const PERMISSION_CATALOGUE = [
 		defaultRoles: ["ADMIN"],
 	},
 
+	// ── Contact ─────────────────────────────────────────────────────────────
+	{
+		code: "contact__manage_messages",
+		name: "Read contact messages",
+		description: "Open the public contact form inbox and mark messages handled.",
+		category: "Contact",
+		defaultRoles: ["ADMIN"],
+	},
+
 	// ── Oversight ───────────────────────────────────────────────────────────
 	{
 		code: "oversight__view_dashboard",

@@ -85,3 +85,10 @@ enum AttachmentKind {
   EVIDENCE
   RESOLUTION_PROOF
 }
+
+enum ContactMessageStatus {
+  NEW
+  IN_PROGRESS
+  RESOLVED
+  SPAM
+}

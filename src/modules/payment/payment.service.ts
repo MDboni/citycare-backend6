@@ -1,6 +1,10 @@
 import crypto from "node:crypto";
 import SSLCommerzPayment from "sslcommerz-lts";
 import { env } from "@/config/env.js";
+// A value import, not a type-only one: the ledger below needs `Prisma.sql`,
+// `Prisma.join` and `Prisma.Decimal` at runtime.
+import { Prisma } from "@/generated/prisma/client.js";
+import type { PaymentStatus } from "@/generated/prisma/enums.js";
 import { logger } from "@/lib/logger.js";
 import { sendReceiptEmail } from "@/lib/mailer.js";
 import { paymentCounter } from "@/lib/metrics.js";
@@ -13,6 +17,7 @@ import { AUDIT_ACTIONS, audit } from "@/utils/auditLogger.js";
 import type { Ctx } from "@/utils/context.js";
 import { toAuditCtx } from "@/utils/context.js";
 import { buildMeta, getPagination, type PaginationQuery } from "@/utils/pagination.js";
+import { dateRange } from "@/utils/queryBuilder.js";
 
 export type CallbackSource = "SUCCESS_CALLBACK" | "FAIL_CALLBACK" | "CANCEL_CALLBACK" | "IPN";
 
@@ -510,4 +515,315 @@ export const approveRefund = async (paymentId: string, actor: Actor, ctx: Ctx) =
 
 	paymentCounter.inc({ outcome: "refunded" });
 	return { ...refund, amount: String(refund.amount) };
+};
+
+// ---------------------------------------------------------------------------
+// the ledger — what the console reads to answer "how much came in"
+// ---------------------------------------------------------------------------
+
+/**
+ * Money leaves this module as a string, never as a number.
+ *
+ * `amount` is `Decimal(10,2)` in the database and a `Decimal` in the client.
+ * Turning one into a JavaScript number to add it up is how a ledger ends up a
+ * paisa short of the bank, and `JSON.stringify` of a Decimal is an object
+ * rather than a figure. Every sum here is done by the database and stringified
+ * on the way out; the console formats it and does no arithmetic on it either.
+ */
+const money = (value: Prisma.Decimal | null) => String(value ?? 0);
+
+export type LedgerQuery = {
+	status?: PaymentStatus;
+	serviceTypeId?: string;
+	from?: string;
+	to?: string;
+	q?: string;
+};
+
+/**
+ * One filter, built once, so the table, the totals and the export can never
+ * disagree about what is in scope.
+ *
+ * The range is on `createdAt`, not `paidAt`, and that is deliberate: a pending
+ * or failed attempt never gets a `paidAt`, so a range that filtered on it would
+ * quietly drop every unsuccessful attempt and make the failure rate on this
+ * page a fiction. The daily series below is the one place `paidAt` is right,
+ * because there the question really is when the money landed.
+ */
+const ledgerWhere = (query: LedgerQuery): Prisma.PaymentWhereInput => {
+	const created = dateRange(query.from, query.to);
+	const term = query.q?.trim();
+	const like = { contains: term, mode: "insensitive" as const };
+
+	return {
+		...(query.status && { status: query.status }),
+		...(created && { createdAt: created }),
+		...(query.serviceTypeId && { serviceRequest: { serviceTypeId: query.serviceTypeId } }),
+		...(term && {
+			OR: [
+				{ transactionId: like },
+				{ serviceRequest: { referenceNo: like } },
+				{ user: { name: like } },
+				{ user: { email: like } },
+			],
+		}),
+	};
+};
+
+/** Every transaction, whoever made it. `listMine` is the citizen-facing one. */
+export const listAll = async (query: LedgerQuery & PaginationQuery) => {
+	const pagination = getPagination(query);
+	const where = ledgerWhere(query);
+
+	const [rows, total] = await Promise.all([
+		prisma.payment.findMany({
+			where,
+			orderBy: { createdAt: "desc" },
+			skip: pagination.skip,
+			take: pagination.take,
+			select: {
+				id: true,
+				transactionId: true,
+				amount: true,
+				currency: true,
+				status: true,
+				gateway: true,
+				paidAt: true,
+				createdAt: true,
+				user: { select: { id: true, name: true, email: true } },
+				serviceRequest: {
+					select: {
+						id: true,
+						referenceNo: true,
+						serviceType: { select: { id: true, name: true } },
+					},
+				},
+				refund: { select: { status: true, amount: true, processedAt: true } },
+			},
+		}),
+		prisma.payment.count({ where }),
+	]);
+
+	return {
+		items: rows.map((row) => ({
+			...row,
+			amount: money(row.amount),
+			refund: row.refund ? { ...row.refund, amount: money(row.refund.amount) } : null,
+		})),
+		meta: buildMeta(pagination, total),
+	};
+};
+
+/** `SUM` and `COUNT` for one status inside the current filter. */
+const totalFor = async (where: Prisma.PaymentWhereInput, status: PaymentStatus) => {
+	const row = await prisma.payment.aggregate({
+		where: { ...where, status },
+		_sum: { amount: true },
+		_count: { _all: true },
+	});
+	return { count: row._count._all, amount: money(row._sum.amount) };
+};
+
+/**
+ * The books.
+ *
+ * Three questions are being asked at once and they are not the same question,
+ * so they stay three figures rather than collapsing into one called "revenue":
+ *
+ *   collected  what settled inside the filter
+ *   refunded   what went back out — which does not cancel a collection, because
+ *              a refund is usually raised against an older payment
+ *   net        collected minus refunded, the only figure that answers what the
+ *              city is actually holding
+ *
+ * `today`, `month` and `allTime` ignore the filter on purpose. They are the
+ * constants at the top of the page, and a figure labelled "today" that quietly
+ * obeyed a date range would be a lie on a page whose whole job is money.
+ */
+export const summary = async (query: Omit<LedgerQuery, "status">) => {
+	const where = ledgerWhere(query);
+
+	const dayStart = new Date();
+	dayStart.setUTCHours(0, 0, 0, 0);
+	const monthStart = new Date();
+	monthStart.setUTCDate(1);
+	monthStart.setUTCHours(0, 0, 0, 0);
+	const settled = (gte: Date): Prisma.PaymentWhereInput => ({ paidAt: { gte } });
+
+	// The series covers the filtered range, or the last 30 days when there is
+	// no range — an empty chart on first open would say nothing at all.
+	const range = dateRange(query.from, query.to);
+	const seriesFrom = range?.gte ?? new Date(Date.now() - 29 * 86_400_000);
+	const seriesTo = range?.lte ?? new Date();
+
+	/*
+	  Grouped by day in SQL. Prisma cannot group by a truncated date, and
+	  pulling every settled payment into Node to bucket it is the kind of query
+	  that is fine against seed data and falls over in year two. The join is
+	  inner, which drops nothing: `serviceRequestId` is required on Payment.
+
+	  The free-text search is deliberately NOT applied here. It narrows the
+	  table — searching a payer's name and watching the revenue chart drop to
+	  one bar would be a chart that answers a question nobody asked.
+	*/
+	const conditions = [
+		Prisma.sql`p."status" = 'SUCCESS'`,
+		Prisma.sql`p."paidAt" IS NOT NULL`,
+		Prisma.sql`p."paidAt" >= ${seriesFrom}`,
+		Prisma.sql`p."paidAt" <= ${seriesTo}`,
+	];
+	if (query.serviceTypeId) {
+		conditions.push(Prisma.sql`sr."serviceTypeId" = ${query.serviceTypeId}`);
+	}
+
+	const [collected, pending, failed, cancelled, refunded, today, month, all, byRequest, daily] =
+		await Promise.all([
+			totalFor(where, "SUCCESS"),
+			totalFor(where, "PENDING"),
+			totalFor(where, "FAILED"),
+			totalFor(where, "CANCELLED"),
+			totalFor(where, "REFUNDED"),
+			totalFor(settled(dayStart), "SUCCESS"),
+			totalFor(settled(monthStart), "SUCCESS"),
+			totalFor({}, "SUCCESS"),
+			prisma.payment.groupBy({
+				by: ["serviceRequestId"],
+				where: { ...where, status: "SUCCESS" },
+				_sum: { amount: true },
+				_count: { _all: true },
+			}),
+			prisma.$queryRaw<{ day: Date; amount: Prisma.Decimal; count: bigint }[]>`
+				SELECT date_trunc('day', p."paidAt") AS day,
+				       SUM(p."amount")               AS amount,
+				       COUNT(*)                      AS count
+				FROM "Payment" p
+				JOIN "ServiceRequest" sr ON sr."id" = p."serviceRequestId"
+				WHERE ${Prisma.join(conditions, " AND ")}
+				GROUP BY 1
+				ORDER BY 1 ASC
+			`,
+		]);
+
+	// The service type hangs off the request, not the payment, so the grouped
+	// rows are resolved through one lookup rather than an N+1.
+	const requestIds = byRequest.map((row) => row.serviceRequestId);
+	const requests = requestIds.length
+		? await prisma.serviceRequest.findMany({
+				where: { id: { in: requestIds } },
+				select: { id: true, serviceType: { select: { id: true, name: true } } },
+			})
+		: [];
+	const typeOf = new Map(requests.map((r) => [r.id, r.serviceType]));
+
+	const perType = new Map<string, { serviceType: string; count: number; amount: Prisma.Decimal }>();
+	for (const row of byRequest) {
+		const type = typeOf.get(row.serviceRequestId);
+		if (!type) continue;
+		const entry = perType.get(type.id) ?? {
+			serviceType: type.name,
+			count: 0,
+			amount: new Prisma.Decimal(0),
+		};
+		entry.count += row._count._all;
+		entry.amount = entry.amount.plus(row._sum.amount ?? 0);
+		perType.set(type.id, entry);
+	}
+
+	return {
+		totals: {
+			collected,
+			pending,
+			failed,
+			cancelled,
+			refunded,
+			/* The only figure here that is arithmetic rather than a query, and it
+			   is done in Decimal for the same reason the rest are strings. */
+			net: money(new Prisma.Decimal(collected.amount).minus(refunded.amount)),
+		},
+		today,
+		month,
+		allTime: all,
+		byServiceType: [...perType.entries()]
+			.map(([serviceTypeId, entry]) => ({
+				serviceTypeId,
+				serviceType: entry.serviceType,
+				count: entry.count,
+				amount: entry.amount.toFixed(2),
+			}))
+			.sort((a, b) => Number(b.amount) - Number(a.amount)),
+		daily: daily.map((row) => ({
+			date: row.day.toISOString().slice(0, 10),
+			count: Number(row.count),
+			amount: money(row.amount),
+		})),
+	};
+};
+
+/** Streams in pages, so a 50k-row ledger never sits in memory. */
+export const streamLedgerCsv = async (
+	query: LedgerQuery,
+	write: (chunk: string) => void,
+): Promise<void> => {
+	const where = ledgerWhere(query);
+
+	write(
+		"transactionId,status,amount,currency,paidAt,createdAt,payer,email,reference,serviceType,refundStatus,refundAmount\n",
+	);
+
+	const escapeCsv = (value: unknown) => {
+		const s = value === null || value === undefined ? "" : String(value);
+		return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+	};
+
+	const pageSize = 500;
+	let cursor: string | undefined;
+
+	for (;;) {
+		const rows = await prisma.payment.findMany({
+			where,
+			take: pageSize,
+			...(cursor && { skip: 1, cursor: { id: cursor } }),
+			orderBy: { id: "asc" },
+			select: {
+				id: true,
+				transactionId: true,
+				status: true,
+				amount: true,
+				currency: true,
+				paidAt: true,
+				createdAt: true,
+				user: { select: { name: true, email: true } },
+				serviceRequest: {
+					select: { referenceNo: true, serviceType: { select: { name: true } } },
+				},
+				refund: { select: { status: true, amount: true } },
+			},
+		});
+
+		if (!rows.length) break;
+
+		for (const r of rows) {
+			write(
+				`${[
+					r.transactionId,
+					r.status,
+					money(r.amount),
+					r.currency,
+					r.paidAt?.toISOString() ?? "",
+					r.createdAt.toISOString(),
+					r.user.name,
+					r.user.email,
+					r.serviceRequest?.referenceNo ?? "",
+					r.serviceRequest?.serviceType.name ?? "",
+					r.refund?.status ?? "",
+					r.refund ? money(r.refund.amount) : "",
+				]
+					.map(escapeCsv)
+					.join(",")}\n`,
+			);
+		}
+
+		if (rows.length < pageSize) break;
+		cursor = rows[rows.length - 1]?.id;
+	}
 };

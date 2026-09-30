@@ -4,6 +4,11 @@ import { requireUser } from "@/middlewares/auth.js";
 import { validatedParams, validatedQuery } from "@/middlewares/validateRequest.js";
 import type { Actor } from "@/modules/complaint/complaint.service.js";
 import * as PaymentService from "@/modules/payment/payment.service.js";
+import type {
+	LedgerCsvInput,
+	LedgerQueryInput,
+	LedgerSummaryInput,
+} from "@/modules/payment/payment.validation.js";
 import { catchAsync } from "@/utils/catchAsync.js";
 import { toCtx } from "@/utils/context.js";
 import { sendResponse } from "@/utils/sendResponse.js";
@@ -116,4 +121,31 @@ export const approveRefund = catchAsync(async (req: Request, res: Response) => {
 	const { id } = validatedParams<{ id: string }>(req);
 	const data = await PaymentService.approveRefund(id, toActor(req), toCtx(req));
 	sendResponse(res, { message: "Refund processed", data });
+});
+
+// --- the staff ledger ------------------------------------------------------
+
+export const listAll = catchAsync(async (req: Request, res: Response) => {
+	const { items, meta } = await PaymentService.listAll(validatedQuery<LedgerQueryInput>(req));
+	sendResponse(res, { message: "Payments retrieved", data: items, meta });
+});
+
+export const summary = catchAsync(async (req: Request, res: Response) => {
+	const data = await PaymentService.summary(validatedQuery<LedgerSummaryInput>(req));
+	sendResponse(res, { message: "Payment summary retrieved", data });
+});
+
+/** Answers a file rather than an envelope, so the totals can be reconciled. */
+export const ledgerCsv = catchAsync(async (req: Request, res: Response) => {
+	const stamp = new Date().toISOString().slice(0, 10);
+	res.setHeader("Content-Type", "text/csv; charset=utf-8");
+	res.setHeader("Content-Disposition", `attachment; filename="citycare-payments-${stamp}.csv"`);
+	// Money, by name. Nothing shared should be holding a copy of it.
+	res.setHeader("Cache-Control", "private, no-store");
+
+	await PaymentService.streamLedgerCsv(validatedQuery<LedgerCsvInput>(req), (chunk) => {
+		res.write(chunk);
+	});
+
+	res.end();
 });

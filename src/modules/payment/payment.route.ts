@@ -31,6 +31,23 @@ paymentRoutes.post(
 	C.initiate,
 );
 paymentRoutes.get("/my", authorize("CITIZEN"), validateRequest(V.listPaymentsSchema), C.listMine);
+
+/*
+  The staff ledger. Declared above `/:id` because `/:id` would otherwise match
+  `/admin` as an id and its UUID validator would answer 400 rather than fall
+  through — Express takes the first route that matches, not the first that
+  validates.
+
+  `authorize("ADMIN")` on top of the permission on purpose. Money is the one
+  place where being granted a permission should not be enough on its own to
+  widen the role that holds it.
+*/
+const ledger = [authorize("ADMIN"), requirePermission(PERMISSIONS.payments__view_all)] as const;
+
+paymentRoutes.get("/admin/summary", ...ledger, validateRequest(V.ledgerSummarySchema), C.summary);
+paymentRoutes.get("/admin/ledger.csv", ...ledger, validateRequest(V.ledgerCsvSchema), C.ledgerCsv);
+paymentRoutes.get("/admin", ...ledger, validateRequest(V.ledgerSchema), C.listAll);
+
 paymentRoutes.get("/:id", validateRequest(V.paymentIdSchema), C.getById);
 paymentRoutes.get("/:id/receipt", validateRequest(V.paymentIdSchema), C.receipt);
 paymentRoutes.post(

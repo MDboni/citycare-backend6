@@ -1267,6 +1267,70 @@ paths:
         - $ref: "#/components/parameters/Limit"
       responses: { "200": { $ref: "#/components/responses/Ok" } }
 
+  /payments/admin:
+    get:
+      tags: [Payment]
+      summary: The ledger — every payment, whoever made it (ADMIN + payments__view_all)
+      description: >
+        Dates filter on createdAt, not paidAt: an unsuccessful attempt never
+        gets a paidAt, and filtering on it would hide every failure.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - name: status
+          in: query
+          schema:
+            { type: string, enum: [PENDING, SUCCESS, FAILED, CANCELLED, REFUNDED] }
+        - { name: serviceTypeId, in: query, schema: { type: string, format: uuid } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - name: q
+          in: query
+          description: Transaction id, reference number, payer name or email.
+          schema: { type: string, minLength: 2, maxLength: 100 }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /payments/admin/summary:
+    get:
+      tags: [Payment]
+      summary: What the city collected (ADMIN + payments__view_all)
+      description: >
+        Totals per status for the current filter, plus today, this month and
+        all time — which ignore the filter deliberately — a daily series of
+        settled money, and a breakdown by service type. Every amount is a
+        decimal string; none of them is a JSON number.
+      parameters:
+        - { name: serviceTypeId, in: query, schema: { type: string, format: uuid } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: q, in: query, schema: { type: string, minLength: 2, maxLength: 100 } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /payments/admin/ledger.csv:
+    get:
+      tags: [Payment]
+      summary: The ledger as a CSV, for reconciliation (ADMIN + payments__view_all)
+      parameters:
+        - name: status
+          in: query
+          schema:
+            { type: string, enum: [PENDING, SUCCESS, FAILED, CANCELLED, REFUNDED] }
+        - { name: serviceTypeId, in: query, schema: { type: string, format: uuid } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: q, in: query, schema: { type: string, minLength: 2, maxLength: 100 } }
+      responses:
+        "200":
+          description: A CSV attachment, streamed in pages.
+          content:
+            text/csv:
+              schema: { type: string }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /payments/{id}:
     get:
       tags: [Payment]

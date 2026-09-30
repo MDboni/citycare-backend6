@@ -32,6 +32,7 @@ paymentRoutes.post(
 );
 paymentRoutes.get("/my", authorize("CITIZEN"), validateRequest(V.listPaymentsSchema), C.listMine);
 paymentRoutes.get("/:id", validateRequest(V.paymentIdSchema), C.getById);
+paymentRoutes.get("/:id/receipt", validateRequest(V.paymentIdSchema), C.receipt);
 paymentRoutes.post(
 	"/:id/refund",
 	authorize("ADMIN"),

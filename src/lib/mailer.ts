@@ -58,15 +58,20 @@ const otpBlock = (otp: string, minutes: number) => `
     It expires in ${minutes} minutes. If you did not request it, ignore this email.
   </p>`;
 
+/** What may ride along with an email. Only the receipt uses this. */
+export type MailAttachment = { filename: string; content: Buffer; contentType: string };
+
 /**
  * Every send is recorded in EmailLog — the template name only. An OTP or a
- * token must never be persisted in the log table.
+ * token must never be persisted in the log table, and neither is an attachment:
+ * the log says a receipt went out, not what was in it.
  */
 const send = async (
 	to: string,
 	template: EmailTemplate,
 	subject: string,
 	html: string,
+	attachments?: MailAttachment[],
 ): Promise<void> => {
 	const log = await prisma.emailLog.create({ data: { to, template, status: "QUEUED" } });
 
@@ -81,7 +86,13 @@ const send = async (
 	}
 
 	try {
-		await transporter.sendMail({ from: env.EMAIL_FROM, to, subject, html });
+		await transporter.sendMail({
+			from: env.EMAIL_FROM,
+			to,
+			subject,
+			html,
+			...(attachments?.length && { attachments }),
+		});
 		await prisma.emailLog.update({
 			where: { id: log.id },
 			data: { status: "SENT", sentAt: new Date(), attempts: { increment: 1 } },
@@ -200,9 +211,24 @@ export const sendStatusUpdateEmail = async (
 	);
 };
 
+/**
+ * The receipt goes to the address on the account, with the PDF attached.
+ *
+ * Attached rather than only linked: a link is one expired session or one dead
+ * storage bucket away from useless, while the attachment is the payer's own copy
+ * the moment it arrives. The link stays as a second route to the same file when
+ * storage produced one.
+ */
 export const sendReceiptEmail = async (
 	to: string,
-	payload: { transactionId: string; amount: string; serviceName: string; receiptUrl?: string },
+	payload: {
+		transactionId: string;
+		amount: string;
+		serviceName: string;
+		referenceNo?: string;
+		receiptUrl?: string;
+		pdf?: Buffer;
+	},
 ): Promise<void> => {
 	await send(
 		to,
@@ -212,9 +238,20 @@ export const sendReceiptEmail = async (
 			"Payment received",
 			`<p style="margin:0 0 12px">We received your payment for <b>${payload.serviceName}</b>.</p>
        <p style="margin:0 0 4px;font-size:14px"><b>Transaction:</b> ${payload.transactionId}</p>
+       ${payload.referenceNo ? `<p style="margin:0 0 4px;font-size:14px"><b>Application:</b> ${payload.referenceNo}</p>` : ""}
        <p style="margin:0 0 16px;font-size:14px"><b>Amount:</b> BDT ${payload.amount}</p>
-       ${payload.receiptUrl ? `<p style="margin:0"><a href="${payload.receiptUrl}">Download receipt (PDF)</a></p>` : ""}`,
+       <p style="margin:0 0 4px;font-size:14px">${payload.pdf ? "Your receipt is attached to this email as a PDF." : "Your receipt is available from the Payments page when you sign in."}</p>
+       ${payload.receiptUrl ? `<p style="margin:12px 0 0"><a href="${payload.receiptUrl}">Download receipt (PDF)</a></p>` : ""}`,
 		),
+		payload.pdf
+			? [
+					{
+						filename: `CityCare-receipt-${payload.transactionId}.pdf`,
+						content: payload.pdf,
+						contentType: "application/pdf",
+					},
+				]
+			: undefined,
 	);
 };
 

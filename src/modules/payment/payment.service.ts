@@ -5,7 +5,7 @@ import { logger } from "@/lib/logger.js";
 import { sendReceiptEmail } from "@/lib/mailer.js";
 import { paymentCounter } from "@/lib/metrics.js";
 import { prisma } from "@/lib/prisma.js";
-import { generateReceipt } from "@/lib/receipt.js";
+import { renderReceipt, storeReceipt } from "@/lib/receipt.js";
 import type { Actor } from "@/modules/complaint/complaint.service.js";
 import { dispatchEmail, notify } from "@/modules/notification/notification.service.js";
 import { ApiError } from "@/utils/ApiError.js";
@@ -235,7 +235,7 @@ export const confirm = async (tranId: string, valId: string) => {
 	paymentCounter.inc({ outcome: "success" });
 
 	dispatchEmail(async () => {
-		const receiptUrl = await generateReceipt({
+		const pdf = await renderReceipt({
 			transactionId: tranId,
 			referenceNo: payment.serviceRequest.referenceNo,
 			serviceName: payment.serviceRequest.serviceType.name,
@@ -244,12 +244,21 @@ export const confirm = async (tranId: string, valId: string) => {
 			payerName: payment.user.name,
 			payerEmail: payment.user.email,
 			paidAt: new Date(),
+		}).catch((err: unknown) => {
+			// A receipt that will not render must not cost the payer their email.
+			logger.error({ err, tranId }, "receipt render failed");
+			return null;
 		});
+
+		const receiptUrl = pdf ? await storeReceipt(pdf, tranId) : null;
+
 		await sendReceiptEmail(payment.user.email, {
 			transactionId: tranId,
 			amount: String(payment.amount),
 			serviceName: payment.serviceRequest.serviceType.name,
+			referenceNo: payment.serviceRequest.referenceNo,
 			...(receiptUrl && { receiptUrl }),
+			...(pdf && { pdf }),
 		});
 	}, "payment-receipt");
 
@@ -290,7 +299,16 @@ export const listMine = async (userId: string, query: PaginationQuery) => {
 				status: true,
 				paidAt: true,
 				createdAt: true,
-				serviceRequest: { select: { referenceNo: true, serviceType: { select: { name: true } } } },
+				// The id and status are what let the payments list send an unpaid row
+				// back to its checkout instead of being a dead record of a failed try.
+				serviceRequest: {
+					select: {
+						id: true,
+						referenceNo: true,
+						status: true,
+						serviceType: { select: { name: true } },
+					},
+				},
 			},
 		}),
 		prisma.payment.count({ where }),
@@ -319,6 +337,53 @@ export const getById = async (id: string, actor: Actor) => {
 		...publicPayment(payment),
 		refund: payment.refund ? { ...payment.refund, amount: String(payment.refund.amount) } : null,
 	};
+};
+
+/**
+ * The receipt PDF for one payment.
+ *
+ * Rendered on demand from the payment row rather than served from storage: the
+ * bytes cannot drift from the record, there is no public URL to leak, and the
+ * ownership check is the same one every other payment read goes through. Only a
+ * SUCCESS payment has a receipt — a pending or failed attempt has nothing to
+ * certify, and handing out a document that looks like proof of payment for one
+ * would be worse than refusing.
+ */
+export const getReceipt = async (paymentId: string, actor: Actor) => {
+	const payment = await prisma.payment.findUnique({
+		where: { id: paymentId },
+		include: {
+			serviceRequest: { select: { referenceNo: true, serviceType: { select: { name: true } } } },
+			user: { select: { name: true, email: true } },
+		},
+	});
+
+	if (!payment) throw new ApiError(404, "Payment not found", [{ code: "NOT_FOUND" }]);
+	if (actor.role !== "ADMIN" && payment.userId !== actor.id) {
+		throw new ApiError(403, "You do not have access to this payment", [
+			{ code: "NOT_OWNER", message: "You do not have access to this payment" },
+		]);
+	}
+	if (payment.status !== "SUCCESS") {
+		throw new ApiError(409, "Only a completed payment has a receipt", [
+			{ code: "CONFLICT", message: `Current status: ${payment.status}` },
+		]);
+	}
+
+	const pdf = await renderReceipt({
+		transactionId: payment.transactionId,
+		referenceNo: payment.serviceRequest.referenceNo,
+		serviceName: payment.serviceRequest.serviceType.name,
+		amount: String(payment.amount),
+		currency: payment.currency,
+		payerName: payment.user.name,
+		payerEmail: payment.user.email,
+		// paidAt is written in the same update that sets SUCCESS; updatedAt is only
+		// a fallback for a row migrated in before that was true.
+		paidAt: payment.paidAt ?? payment.updatedAt,
+	});
+
+	return { pdf, filename: `CityCare-receipt-${payment.transactionId}.pdf` };
 };
 
 // ---------------------------------------------------------------------------

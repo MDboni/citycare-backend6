@@ -87,6 +87,25 @@ export const getById = catchAsync(async (req: Request, res: Response) => {
 	sendResponse(res, { message: "Payment retrieved", data });
 });
 
+/**
+ * The one endpoint here that answers a file instead of an envelope.
+ *
+ * `attachment` rather than `inline`: this is a document somebody is asked to
+ * keep, and a download that lands in the downloads folder is easier to find
+ * again than a tab that was closed.
+ */
+export const receipt = catchAsync(async (req: Request, res: Response) => {
+	const { id } = validatedParams<{ id: string }>(req);
+	const { pdf, filename } = await PaymentService.getReceipt(id, toActor(req));
+
+	res.setHeader("Content-Type", "application/pdf");
+	res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+	res.setHeader("Content-Length", String(pdf.length));
+	// A receipt is personal and cheap to rebuild; no shared cache should hold it.
+	res.setHeader("Cache-Control", "private, no-store");
+	res.send(pdf);
+});
+
 export const requestRefund = catchAsync(async (req: Request, res: Response) => {
 	const { id } = validatedParams<{ id: string }>(req);
 	const data = await PaymentService.requestRefund(id, req.body.reason, toActor(req), toCtx(req));

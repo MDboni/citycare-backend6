@@ -178,7 +178,7 @@ export const sendNewLoginAlert = async (
 };
 
 export const sendPasswordResetEmail = async (to: string, token: string): Promise<void> => {
-	const link = `${env.CLIENT_URL.split(",")[0]}/reset-password?token=${token}`;
+	const link = `${env.CLIENT_URL.split(",")[0]}/auth/reset-password?token=${token}`;
 	if (!isProd && !smtpConfigured) logger.warn(`[dev only] password reset link: ${link}`);
 	await send(
 		to,

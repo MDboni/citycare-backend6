@@ -11,8 +11,9 @@ export default defineConfig({
 		hookTimeout: 120_000,
 		// Integration tests share one database, so they must not race each other.
 		pool: "forks",
+		// minWorkers was here too; vitest 5 dropped it from InlineConfig, and with
+		// one worker and no file parallelism it said nothing extra anyway.
 		maxWorkers: 1,
-		minWorkers: 1,
 		fileParallelism: false,
 		coverage: {
 			provider: "v8",

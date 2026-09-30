@@ -1,0 +1,20 @@
+{
+	// Tests are excluded from ../tsconfig.json on purpose: `pnpm build` runs plain
+	// tsc and must not compile them into dist. Without a config of their own they
+	// then belong to no project at all — the editor loses `@/*` and the node
+	// globals, and `tsc` never typechecks them, which is how a test file can pass
+	// at runtime (vitest only strips types) while being full of type errors.
+	//
+	// The name matters: an editor looks for `tsconfig.json` walking up from the
+	// file, so this one has to be it.
+	"extends": "../tsconfig.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"rootDir": "..",
+		"types": ["node", "vitest/globals"]
+	},
+	// The express/sslcommerz module augmentations are ambient: nothing imports
+	// them, so they have to be named or every `req.user` in src looks untyped.
+	"include": [".", "../src/types"],
+	"exclude": []
+}

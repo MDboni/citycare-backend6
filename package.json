@@ -13,6 +13,7 @@
 		"build": "prisma generate && tsc && tsc-alias -p tsconfig.json --resolve-full-paths",
 		"start": "node dist/server.js",
 		"typecheck": "tsc --noEmit",
+		"typecheck:tests": "tsc -p tests/tsconfig.json",
 		"lint": "biome check .",
 		"lint:fix": "biome check --write .",
 		"format": "biome format --write .",

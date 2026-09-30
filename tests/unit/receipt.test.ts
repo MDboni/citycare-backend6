@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { inflateSync } from "node:zlib";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { type ReceiptData, renderReceipt } from "@/lib/receipt.js";
 
 const DATA: ReceiptData = {
@@ -12,17 +13,18 @@ const DATA: ReceiptData = {
 	paidAt: new Date("2026-09-29T15:54:46.257Z"),
 };
 
+const latin1 = (pdf: Buffer) => pdf.toString("latin1");
+
 /** Every visible string, read back out of the compressed content stream. */
-const textOf = async (pdf: Buffer): Promise<string> => {
-	const { inflateSync } = await import("node:zlib");
-	const raw = pdf.toString("latin1");
+const textOf = (pdf: Buffer): string => {
+	const raw = latin1(pdf);
 	const header = /\/Length (\d+)\s*\/Filter \/FlateDecode\s*>>\s*stream\r?\n/.exec(raw);
 	if (!header) throw new Error("no deflated content stream");
 
 	const start = header.index + header[0].length;
-	const body = inflateSync(
-		Buffer.from(raw.slice(start, start + Number(header[1])), "latin1"),
-	).toString("latin1");
+	const body = latin1(
+		inflateSync(Buffer.from(raw.slice(start, start + Number(header[1])), "latin1")),
+	);
 
 	// pdfkit writes runs as [<hex> kern <hex>] TJ, so the hex is the text.
 	return [...body.matchAll(/<([0-9A-Fa-f]+)>/g)]
@@ -36,11 +38,11 @@ describe("receipt pdf", () => {
 
 		expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
 		expect(pdf.length).toBeGreaterThan(1000);
-		expect(raw(pdf).match(/\/Type \/Page[^s]/g)).toHaveLength(1);
+		expect(latin1(pdf).match(/\/Type \/Page[^s]/g)).toHaveLength(1);
 	});
 
 	it("prints what the payer needs to prove the payment", async () => {
-		const text = await textOf(await renderReceipt(DATA));
+		const text = textOf(await renderReceipt(DATA));
 
 		expect(text).toContain("PAYMENT RECEIPT");
 		expect(text).toContain(DATA.transactionId);
@@ -54,18 +56,36 @@ describe("receipt pdf", () => {
 	});
 
 	it("falls back to the raw amount when it is not a number", async () => {
-		const text = await textOf(await renderReceipt({ ...DATA, amount: "unknown" }));
+		const text = textOf(await renderReceipt({ ...DATA, amount: "unknown" }));
 		expect(text).toContain("BDT unknown");
 	});
 });
 
-describe("receipt email", () => {
-	it("attaches the pdf", async () => {
-		const sendMail = vi.fn(async () => ({}));
+/** The shape nodemailer is handed. Typed so the assertions need no casts. */
+type SentMail = {
+	to: string;
+	subject: string;
+	html: string;
+	attachments?: { filename: string; content: Buffer; contentType: string }[];
+};
 
+/**
+ * The mailer is mocked for the whole suite in tests/setup.ts, because no test
+ * should be able to send mail by accident. This file is the exception that has
+ * to read what it would have sent, so it unmocks the module and mocks the
+ * transport underneath it instead — nothing leaves the process either way.
+ */
+vi.unmock("@/lib/mailer.js");
+
+describe("receipt email", () => {
+	const sendMail = vi.fn(async (_message: SentMail) => ({}));
+	let sendReceiptEmail: typeof import("@/lib/mailer.js").sendReceiptEmail;
+
+	beforeAll(async () => {
 		vi.doMock("nodemailer", () => ({
 			default: { createTransport: () => ({ sendMail, verify: vi.fn(async () => true) }) },
 		}));
+		// The mailer writes an EmailLog row per send; it has no database here.
 		vi.doMock("@/lib/prisma.js", () => ({
 			prisma: {
 				emailLog: {
@@ -79,10 +99,13 @@ describe("receipt email", () => {
 		process.env.SMTP_USER = "mailer@example.test";
 		process.env.SMTP_PASS = "not-a-real-password";
 
-		const mailer = await import("@/lib/mailer.js?receipt-attachment");
+		({ sendReceiptEmail } = await import("@/lib/mailer.js"));
+	});
+
+	it("attaches the pdf, and says so, when one was rendered", async () => {
 		const pdf = await renderReceipt(DATA);
 
-		await mailer.sendReceiptEmail("payer@example.test", {
+		await sendReceiptEmail("payer@example.test", {
 			transactionId: DATA.transactionId,
 			amount: DATA.amount,
 			serviceName: DATA.serviceName,
@@ -90,50 +113,28 @@ describe("receipt email", () => {
 			pdf,
 		});
 
-		expect(sendMail).toHaveBeenCalledTimes(1);
-		const message = sendMail.mock.calls[0][0] as {
-			to: string;
-			html: string;
-			attachments?: { filename: string; content: Buffer; contentType: string }[];
-		};
-
-		expect(message.to).toBe("payer@example.test");
-		expect(message.attachments).toHaveLength(1);
-		expect(message.attachments?.[0]).toMatchObject({
+		const message = sendMail.mock.calls.at(-1)?.[0];
+		expect(message?.to).toBe("payer@example.test");
+		expect(message?.subject).toContain(DATA.transactionId);
+		expect(message?.attachments).toHaveLength(1);
+		expect(message?.attachments?.[0]).toMatchObject({
 			filename: `CityCare-receipt-${DATA.transactionId}.pdf`,
 			contentType: "application/pdf",
 		});
-		expect(message.attachments?.[0].content.subarray(0, 5).toString("latin1")).toBe("%PDF-");
-		expect(message.html).toContain("attached to this email as a PDF");
+		expect(message?.attachments?.[0].content.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+		expect(message?.html).toContain("attached to this email as a PDF");
+		expect(message?.html).toContain(DATA.referenceNo);
 	});
 
-	it("says where the receipt is when there is no attachment", async () => {
-		const sendMail = vi.fn(async () => ({}));
-
-		vi.doMock("nodemailer", () => ({
-			default: { createTransport: () => ({ sendMail, verify: vi.fn(async () => true) }) },
-		}));
-		vi.doMock("@/lib/prisma.js", () => ({
-			prisma: {
-				emailLog: {
-					create: vi.fn(async () => ({ id: "log-2" })),
-					update: vi.fn(async () => ({})),
-				},
-			},
-		}));
-
-		const mailer = await import("@/lib/mailer.js?receipt-no-attachment");
-
-		await mailer.sendReceiptEmail("payer@example.test", {
+	it("points at the payments page when the pdf could not be rendered", async () => {
+		await sendReceiptEmail("payer@example.test", {
 			transactionId: DATA.transactionId,
 			amount: DATA.amount,
 			serviceName: DATA.serviceName,
 		});
 
-		const message = sendMail.mock.calls[0][0] as { html: string; attachments?: unknown[] };
-		expect(message.attachments).toBeUndefined();
-		expect(message.html).toContain("available from the Payments page");
+		const message = sendMail.mock.calls.at(-1)?.[0];
+		expect(message?.attachments).toBeUndefined();
+		expect(message?.html).toContain("available from the Payments page");
 	});
 });
-
-const raw = (pdf: Buffer) => pdf.toString("latin1");

@@ -395,6 +395,41 @@ paths:
         "200": { $ref: "#/components/responses/Ok" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /auth/logout/beacon:
+    post:
+      tags: [Auth]
+      summary: Log out from a page that is already leaving
+      security: []
+      description: |
+        Same effect as `/auth/logout`, but sendable by `navigator.sendBeacon`.
+
+        It takes the tokens in the body rather than in the `Authorization`
+        header, and accepts `text/plain`, because both of those are what make
+        the browser send the request without a CORS preflight first — and a
+        preflight is one round trip more than a page that is navigating away
+        has left. A `fetch` with `keepalive` does not survive it either.
+
+        Nothing is given away by this: whoever holds the refresh token can
+        already mint access tokens with it, so handing it over to be destroyed
+        only takes privilege away. `accessToken` is optional and only buys the
+        denylist entry — the session revocation is what ends the session, and
+        `auth` re-checks the session on every request.
+
+        Always answers 204, including for a token that does not exist, a body
+        that is not JSON and no body at all, so it cannot be asked which tokens
+        are real.
+      requestBody:
+        required: false
+        content:
+          text/plain:
+            schema:
+              type: object
+              properties:
+                refreshToken: { type: string }
+                accessToken: { type: string }
+      responses:
+        "204": { description: Accepted; nothing is reported back }
+
   /auth/logout-all:
     post:
       tags: [Auth]

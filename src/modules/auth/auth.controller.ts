@@ -13,6 +13,15 @@ import { sendResponse } from "@/utils/sendResponse.js";
  * No Prisma, no business rules, no try/catch.
  */
 
+/** A beacon body is whatever the browser sent; malformed is simply empty. */
+const safeJson = (text: string): unknown => {
+	try {
+		return JSON.parse(text);
+	} catch {
+		return null;
+	}
+};
+
 export const register = catchAsync(async (req: Request, res: Response) => {
 	const data = await AuthService.startSignup(req.body);
 	sendResponse(res, {
@@ -94,6 +103,27 @@ export const logout = catchAsync(async (req: Request, res: Response) => {
 
 	await AuthService.logout(user.id, req.sessionId, req.token);
 	sendResponse(res, { message: "Logged out successfully" });
+});
+
+/**
+ * The sign-out a leaving page can still send. See `AuthService.logoutByToken`
+ * for why it reads the tokens from the body instead of the Authorization
+ * header, and why that gives nothing away.
+ *
+ * `navigator.sendBeacon` posts a `text/plain` body and cannot read a response,
+ * so this parses the text itself and answers an empty 204 — the same answer for
+ * a token that does not exist, so nobody can ask this endpoint which ones do.
+ */
+export const logoutBeacon = catchAsync(async (req: Request, res: Response) => {
+	const parsed: unknown = typeof req.body === "string" ? safeJson(req.body) : req.body;
+	const body = (parsed ?? {}) as { refreshToken?: unknown; accessToken?: unknown };
+
+	await AuthService.logoutByToken(
+		typeof body.refreshToken === "string" ? body.refreshToken : undefined,
+		typeof body.accessToken === "string" ? body.accessToken : undefined,
+	);
+
+	res.status(204).end();
 });
 
 export const logoutAll = catchAsync(async (req: Request, res: Response) => {

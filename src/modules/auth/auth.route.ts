@@ -1,4 +1,4 @@
-import { type RequestHandler, Router } from "express";
+import express, { type RequestHandler, Router } from "express";
 import passport, { googleConfigured } from "@/config/passport.js";
 import { auth } from "@/middlewares/auth.js";
 import { authorize } from "@/middlewares/authorize.js";
@@ -50,6 +50,22 @@ authRoutes.get(
 // --- tokens and sessions ---------------------------------------------------
 authRoutes.post("/refresh-token", validateRequest(V.refreshSchema), AuthController.refreshToken);
 authRoutes.post("/logout", auth, AuthController.logout);
+
+/**
+ * Sign-out that a page can send on its way out.
+ *
+ * Deliberately outside `auth`: it reads the tokens from the body rather than
+ * the Authorization header, because a header is exactly what makes the browser
+ * stop for a CORS preflight — and a page that has already navigated away never
+ * gets to send what comes after it. `text/plain` for the same reason, which is
+ * also all `navigator.sendBeacon` can post, so the body is parsed here instead
+ * of by `express.json`. 4kb is two JWTs and room to spare.
+ */
+authRoutes.post(
+	"/logout/beacon",
+	express.text({ type: ["text/plain", "application/json"], limit: "4kb" }),
+	AuthController.logoutBeacon,
+);
 authRoutes.post("/logout-all", auth, AuthController.logoutAll);
 authRoutes.get("/sessions", auth, AuthController.listSessions);
 authRoutes.delete(

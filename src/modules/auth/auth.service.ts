@@ -28,7 +28,7 @@ import { AUDIT_ACTIONS, audit } from "@/utils/auditLogger.js";
 import type { Ctx } from "@/utils/context.js";
 import { toAuditCtx } from "@/utils/context.js";
 import { maskEmail, otpHash, randomOtp, randomToken, safeEqual, sha256 } from "@/utils/crypto.js";
-import { remainingTtl, signAccessToken, signRefreshToken } from "@/utils/jwt.js";
+import { remainingTtl, signAccessToken, signRefreshToken, verifyAccessToken } from "@/utils/jwt.js";
 
 // ---------------------------------------------------------------------------
 // shared helpers
@@ -770,27 +770,17 @@ export const refresh = async (token: string, ctx: Ctx) => {
 export const logout = async (
 	userId: string,
 	sessionId: string,
-	accessToken: { jti: string; exp: number },
+	/**
+	 * Optional because the beacon below has no Authorization header to read it
+	 * from. Without it the access token keeps its signature until it expires,
+	 * but it stops being accepted all the same: `auth` looks the session up on
+	 * every request and this revokes it, and the cached copy of that lookup is
+	 * deleted here too.
+	 */
+	accessToken?: { jti: string; exp: number } | null,
 ): Promise<void> => {
 	const now = new Date();
 
-	/**
-	 * Four round trips became two, and the two overlap.
-	 *
-	 * This used to be a `$transaction`, which costs a BEGIN and a COMMIT on top
-	 * of the two updates — and the database is far enough from the function that
-	 * each of those is most of the wait. Signing out took 1.6s against a /health
-	 * that answers in 0.4s, and the screen cannot change until it returns,
-	 * because a sign-out that has not reached the server has not revoked
-	 * anything.
-	 *
-	 * Dropping the transaction is safe here, which is why it goes rather than
-	 * something load-bearing. Neither update depends on the other, and either
-	 * one alone already ends the session: `refresh` rejects a token whose
-	 * session carries `revokedAt` (see the expiry check there), and it rejects a
-	 * token carrying its own `revokedAt` as a replay. There is no partial
-	 * outcome that leaves the session usable.
-	 */
 	const revoked = Promise.all([
 		prisma.session.updateMany({
 			where: { id: sessionId, userId, revokedAt: null },
@@ -805,9 +795,11 @@ export const logout = async (
 	// Both Redis writes in one trip rather than two. The access token is still
 	// cryptographically valid for up to 15 minutes, so it goes on the denylist
 	// for exactly that long; the cached session goes immediately.
-	const forgotten = redis
-		.multi()
-		.set(KEYS.jwtDeny(accessToken.jti), "1", "EX", remainingTtl(accessToken.exp))
+	const pipeline = redis.multi();
+	if (accessToken) {
+		pipeline.set(KEYS.jwtDeny(accessToken.jti), "1", "EX", remainingTtl(accessToken.exp));
+	}
+	const forgotten = pipeline
 		.del(KEYS.session(sessionId))
 		.exec()
 		.catch(() => {
@@ -816,6 +808,47 @@ export const logout = async (
 		});
 
 	await Promise.all([revoked, forgotten]);
+};
+
+/**
+ * Signing out from a page that is already leaving.
+ *
+ * `POST /auth/logout` cannot be sent by `navigator.sendBeacon`, and a `fetch`
+ * with `keepalive` does not survive the unload either — both carry an
+ * `Authorization` header, which makes the browser ask permission with a CORS
+ * preflight first, and the page is gone before that answer arrives. Measured:
+ * the only thing that ever left was the 204 for the preflight, and the refresh
+ * token still worked afterwards.
+ *
+ * So this one takes the tokens in the body instead of in a header, which keeps
+ * the request inside the set a browser will send without asking first. It gives
+ * nothing away: whoever holds the refresh token can already mint access tokens
+ * with it, so handing it over to have it destroyed only ever takes privilege
+ * away. An unknown token is not an error — the endpoint answers the same 204
+ * either way rather than reporting which tokens exist.
+ */
+export const logoutByToken = async (refreshToken?: string, accessToken?: string): Promise<void> => {
+	if (!refreshToken) return;
+
+	const row = await prisma.refreshToken.findUnique({
+		where: { tokenHash: sha256(refreshToken) },
+		select: { userId: true, sessionId: true },
+	});
+	if (!row) return;
+
+	// Best effort: a token that will not verify costs the denylist entry, not
+	// the sign-out. The session revocation below is what ends the session.
+	let claims: { jti: string; exp: number } | null = null;
+	if (accessToken) {
+		try {
+			const payload = verifyAccessToken(accessToken);
+			claims = { jti: payload.jti, exp: payload.exp };
+		} catch {
+			claims = null;
+		}
+	}
+
+	await logout(row.userId, row.sessionId, claims);
 };
 
 export const logoutAll = async (userId: string): Promise<{ revoked: number }> => {

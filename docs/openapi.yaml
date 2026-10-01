@@ -877,7 +877,8 @@ paths:
   /complaints/nearby:
     get:
       tags: [Complaint]
-      summary: Open complaints near a point
+      summary: Open complaints near a point - public, same fields as the list
+      security: []
       parameters:
         - { name: lat, in: query, required: true, schema: { type: number } }
         - { name: lng, in: query, required: true, schema: { type: number } }

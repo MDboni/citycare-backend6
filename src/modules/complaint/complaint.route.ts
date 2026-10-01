@@ -14,6 +14,12 @@ export const complaintRoutes: Router = Router();
 // Limited fields only: status, category, ward, timeline. No personal data.
 complaintRoutes.get("/track/:trackingId", validateRequest(V.trackingIdSchema), C.track);
 
+// The map of open issues around you. Same projection as the signed-in list
+// (LIST_SELECT: no citizen name, email or phone), and the page that renders
+// it is public, so it has to sit above the auth gate or it answers 401 to
+// every visitor who is not signed in.
+complaintRoutes.get("/nearby", validateRequest(V.nearbySchema), C.nearby);
+
 complaintRoutes.use(auth);
 
 // --- collection ------------------------------------------------------------
@@ -44,7 +50,6 @@ complaintRoutes.get(
 	C.listAssigned,
 );
 complaintRoutes.get("/search", validateRequest(V.searchSchema), C.search);
-complaintRoutes.get("/nearby", validateRequest(V.nearbySchema), C.nearby);
 
 // --- single complaint ------------------------------------------------------
 complaintRoutes.get("/:id", validateRequest(V.complaintIdSchema), C.getById);

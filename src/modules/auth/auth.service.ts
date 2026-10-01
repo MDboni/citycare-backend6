@@ -772,23 +772,50 @@ export const logout = async (
 	sessionId: string,
 	accessToken: { jti: string; exp: number },
 ): Promise<void> => {
-	await prisma.$transaction([
+	const now = new Date();
+
+	/**
+	 * Four round trips became two, and the two overlap.
+	 *
+	 * This used to be a `$transaction`, which costs a BEGIN and a COMMIT on top
+	 * of the two updates — and the database is far enough from the function that
+	 * each of those is most of the wait. Signing out took 1.6s against a /health
+	 * that answers in 0.4s, and the screen cannot change until it returns,
+	 * because a sign-out that has not reached the server has not revoked
+	 * anything.
+	 *
+	 * Dropping the transaction is safe here, which is why it goes rather than
+	 * something load-bearing. Neither update depends on the other, and either
+	 * one alone already ends the session: `refresh` rejects a token whose
+	 * session carries `revokedAt` (see the expiry check there), and it rejects a
+	 * token carrying its own `revokedAt` as a replay. There is no partial
+	 * outcome that leaves the session usable.
+	 */
+	const revoked = Promise.all([
 		prisma.session.updateMany({
 			where: { id: sessionId, userId, revokedAt: null },
-			data: { revokedAt: new Date(), revokedReason: REVOKE_REASON.LOGOUT },
+			data: { revokedAt: now, revokedReason: REVOKE_REASON.LOGOUT },
 		}),
 		prisma.refreshToken.updateMany({
 			where: { sessionId, revokedAt: null },
-			data: { revokedAt: new Date() },
+			data: { revokedAt: now },
 		}),
 	]);
 
-	// The access token is still cryptographically valid for up to 15 minutes,
-	// so it goes on the denylist for exactly that long.
-	await redis
+	// Both Redis writes in one trip rather than two. The access token is still
+	// cryptographically valid for up to 15 minutes, so it goes on the denylist
+	// for exactly that long; the cached session goes immediately.
+	const forgotten = redis
+		.multi()
 		.set(KEYS.jwtDeny(accessToken.jti), "1", "EX", remainingTtl(accessToken.exp))
-		.catch(() => {});
-	await invalidate(KEYS.session(sessionId));
+		.del(KEYS.session(sessionId))
+		.exec()
+		.catch(() => {
+			// Cached data expires on its own, and the database rows above are the
+			// record that actually decides whether this session still works.
+		});
+
+	await Promise.all([revoked, forgotten]);
 };
 
 export const logoutAll = async (userId: string): Promise<{ revoked: number }> => {

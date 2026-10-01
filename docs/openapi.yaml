@@ -189,6 +189,12 @@ paths:
       description: |
         Stores the pending signup in Redis for 10 minutes and emails a 6-digit OTP.
         The schema is strict: an unknown key such as `role` is a 400.
+
+        The response carries `email` back unmasked, because that address is the
+        key of the pending record: `/auth/verify-otp` and `/auth/resend-otp`
+        both look the signup up by it. Unlike the login and two-factor
+        challenges, which are keyed by `challengeId`, there is nothing else to
+        send. Keep it and pass it on verbatim.
       requestBody:
         required: true
         content:

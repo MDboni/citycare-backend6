@@ -312,7 +312,25 @@ export const startSignup = async (input: {
 		await sendOtpEmail(email, otp, Math.round(ttl / 60));
 		otpCounter.inc({ kind: "signup", outcome: "sent" });
 
-		return { email: maskEmail(email), expiresInSec: ttl };
+		/**
+		 * The address goes back whole, which is the opposite of what the login
+		 * and two-factor challenges do — and the difference is deliberate.
+		 *
+		 * Those are keyed by a `challengeId`, so masking costs the caller
+		 * nothing. A pending signup has no id: it is keyed by the email itself,
+		 * and `verifyOtp` and `resendOtp` both look it up by the address the
+		 * client sends back. Handing out `p*****6@example.com` therefore handed
+		 * the client a key that matches nothing, and the flow died exactly where
+		 * it looked healthiest — the code arrives, the code is right, and
+		 * verifying answers "OTP expired or signup not started" while resend
+		 * reports success and sends nothing, because an address with no pending
+		 * record is the same thing it says to a stranger probing for accounts.
+		 *
+		 * Nothing leaks by returning it: this response goes only to whoever just
+		 * submitted that address, and for the Google path Google just confirmed
+		 * they own it.
+		 */
+		return { email, expiresInSec: ttl };
 	});
 };
 
@@ -381,8 +399,10 @@ export const resendOtp = async (emailRaw: string) => {
 	const email = emailRaw.trim().toLowerCase();
 	const key = KEYS.pendingSignup(email);
 	const ttl = await getSetting("SIGNUP_OTP_TTL_SEC");
-	// An unknown email gets exactly the same answer — no enumeration.
-	const generic = { email: maskEmail(email), expiresInSec: ttl };
+	// An unknown email gets exactly the same answer — no enumeration. The address
+	// is echoed back whole for the same reason `startSignup` does: it is the key
+	// the client must send next, and it is the client's own address either way.
+	const generic = { email, expiresInSec: ttl };
 
 	return requireRedis(async () => {
 		const raw = await redis.get(key);

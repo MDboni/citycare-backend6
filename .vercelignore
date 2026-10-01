@@ -4,6 +4,10 @@
 .env.*
 !.env.example
 
+# 29 live production secrets in plaintext. Not committed, but a CLI deploy
+# uploads the working tree, so name it here too.
+vercel-env-production.txt
+
 # Not needed to build or to serve a request.
 tests
 coverage

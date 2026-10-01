@@ -2,13 +2,13 @@ import type { Request, Response } from "express";
 import { env } from "@/config/env.js";
 import { requireUser } from "@/middlewares/auth.js";
 import { validatedParams, validatedQuery } from "@/middlewares/validateRequest.js";
-import type { Actor } from "@/modules/complaint/complaint.service.js";
 import * as PaymentService from "@/modules/payment/payment.service.js";
 import type {
 	LedgerCsvInput,
 	LedgerQueryInput,
 	LedgerSummaryInput,
 } from "@/modules/payment/payment.validation.js";
+import type { Actor } from "@/types/actor.js";
 import { catchAsync } from "@/utils/catchAsync.js";
 import { toCtx } from "@/utils/context.js";
 import { sendResponse } from "@/utils/sendResponse.js";

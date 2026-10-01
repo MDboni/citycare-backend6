@@ -1,13 +1,13 @@
 import { signedUrl, uploadBuffer } from "@/config/cloudinary.js";
 import type { Prisma } from "@/generated/prisma/client.js";
 import { prisma } from "@/lib/prisma.js";
-import type { Actor } from "@/modules/complaint/complaint.service.js";
 import { notify } from "@/modules/notification/notification.service.js";
 import type {
 	CreateServiceRequestInput,
 	ListServiceRequestsQuery,
 	UpdateServiceRequestStatusInput,
 } from "@/modules/serviceRequest/serviceRequest.validation.js";
+import type { Actor } from "@/types/actor.js";
 import { ApiError } from "@/utils/ApiError.js";
 import { AUDIT_ACTIONS, audit } from "@/utils/auditLogger.js";
 import type { Ctx } from "@/utils/context.js";

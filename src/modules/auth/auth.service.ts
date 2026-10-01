@@ -23,6 +23,7 @@ import {
 	REVOKE_REASON,
 	TTL,
 } from "@/modules/auth/auth.constants.js";
+import type { LoginChallenge, PendingSignup, PublicUser } from "@/modules/auth/auth.types.js";
 import { ApiError } from "@/utils/ApiError.js";
 import { AUDIT_ACTIONS, audit } from "@/utils/auditLogger.js";
 import type { Ctx } from "@/utils/context.js";
@@ -33,37 +34,6 @@ import { remainingTtl, signAccessToken, signRefreshToken, verifyAccessToken } fr
 // ---------------------------------------------------------------------------
 // shared helpers
 // ---------------------------------------------------------------------------
-
-type PendingSignup = {
-	name: string;
-	email: string;
-	provider: "LOCAL" | "GOOGLE";
-	passwordHash: string | null;
-	googleId: string | null;
-	avatarUrl: string | null;
-	phone: string | null;
-	otpHash: string;
-	attempts: number;
-};
-
-type LoginChallenge = {
-	userId: string;
-	otpHash: string;
-	attempts: number;
-	resends: number;
-	ipHash: string;
-	uaHash: string;
-	/** So whoever ends the challenge can take the emailed link down with it. */
-	magicHash?: string;
-};
-
-export type PublicUser = {
-	id: string;
-	name: string;
-	email: string;
-	role: string;
-	avatarUrl: string | null;
-};
 
 const publicUser = (u: {
 	id: string;

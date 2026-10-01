@@ -10,16 +10,15 @@ import { sendReceiptEmail } from "@/lib/mailer.js";
 import { paymentCounter } from "@/lib/metrics.js";
 import { prisma } from "@/lib/prisma.js";
 import { renderReceipt, storeReceipt } from "@/lib/receipt.js";
-import type { Actor } from "@/modules/complaint/complaint.service.js";
 import { dispatchEmail, notify } from "@/modules/notification/notification.service.js";
+import type { CallbackSource, LedgerQuery } from "@/modules/payment/payment.types.js";
+import type { Actor } from "@/types/actor.js";
 import { ApiError } from "@/utils/ApiError.js";
 import { AUDIT_ACTIONS, audit } from "@/utils/auditLogger.js";
 import type { Ctx } from "@/utils/context.js";
 import { toAuditCtx } from "@/utils/context.js";
 import { buildMeta, getPagination, type PaginationQuery } from "@/utils/pagination.js";
 import { dateRange } from "@/utils/queryBuilder.js";
-
-export type CallbackSource = "SUCCESS_CALLBACK" | "FAIL_CALLBACK" | "CANCEL_CALLBACK" | "IPN";
 
 const gateway = () =>
 	new SSLCommerzPayment(env.SSL_STORE_ID, env.SSL_STORE_PASSWORD, env.SSL_IS_LIVE);
@@ -531,14 +530,6 @@ export const approveRefund = async (paymentId: string, actor: Actor, ctx: Ctx) =
  * on the way out; the console formats it and does no arithmetic on it either.
  */
 const money = (value: Prisma.Decimal | null) => String(value ?? 0);
-
-export type LedgerQuery = {
-	status?: PaymentStatus;
-	serviceTypeId?: string;
-	from?: string;
-	to?: string;
-	q?: string;
-};
 
 /**
  * One filter, built once, so the table, the totals and the export can never

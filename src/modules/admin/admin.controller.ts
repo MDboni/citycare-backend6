@@ -9,13 +9,11 @@ import type {
 	ListUsersQuery,
 	SecurityEventsQuery,
 } from "@/modules/admin/admin.validation.js";
-import type { Actor } from "@/modules/complaint/complaint.service.js";
 import * as ComplaintService from "@/modules/complaint/complaint.service.js";
+import type { AdminActor } from "@/types/actor.js";
 import { catchAsync } from "@/utils/catchAsync.js";
 import { toCtx } from "@/utils/context.js";
 import { sendResponse } from "@/utils/sendResponse.js";
-
-type AdminActor = Actor & { isSuperAdmin: boolean };
 
 const toActor = (req: Request): AdminActor => {
 	const u = requireUser(req);

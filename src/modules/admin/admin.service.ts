@@ -17,8 +17,8 @@ import type {
 import { REVOKE_REASON } from "@/modules/auth/auth.constants.js";
 import { logSecurity, revokeAllSessions } from "@/modules/auth/auth.service.js";
 import { OPEN_STATUSES } from "@/modules/complaint/complaint.constants.js";
-import type { Actor } from "@/modules/complaint/complaint.service.js";
 import { dispatchEmail } from "@/modules/notification/notification.service.js";
+import type { Actor, AdminActor } from "@/types/actor.js";
 import { ApiError } from "@/utils/ApiError.js";
 import { AUDIT_ACTIONS, audit } from "@/utils/auditLogger.js";
 import type { Ctx } from "@/utils/context.js";
@@ -51,10 +51,7 @@ const USER_SELECT = {
  * An ADMIN may manage citizens and officers. Touching another ADMIN — or
  * yourself — needs the super admin flag.
  */
-const assertMayManage = (
-	target: { id: string; role: string },
-	actor: Actor & { isSuperAdmin: boolean },
-) => {
+const assertMayManage = (target: { id: string; role: string }, actor: AdminActor) => {
 	if (target.id === actor.id) {
 		throw new ApiError(403, "You cannot change your own role or status", [
 			{ code: "FORBIDDEN_ROLE", message: "You cannot change your own role or status" },
@@ -167,7 +164,7 @@ export const createOfficer = async (input: CreateOfficerInput, actor: Actor, ctx
 export const updateRole = async (
 	targetId: string,
 	role: "CITIZEN" | "OFFICER" | "ADMIN",
-	actor: Actor & { isSuperAdmin: boolean },
+	actor: AdminActor,
 	ctx: Ctx,
 ) => {
 	const target = await prisma.user.findFirst({ where: { id: targetId } });
@@ -219,7 +216,7 @@ export const updateStatus = async (
 	targetId: string,
 	status: "ACTIVE" | "BLOCKED",
 	reason: string | undefined,
-	actor: Actor & { isSuperAdmin: boolean },
+	actor: AdminActor,
 	ctx: Ctx,
 ) => {
 	const target = await prisma.user.findFirst({ where: { id: targetId } });
@@ -253,11 +250,7 @@ export const updateStatus = async (
 	return updated;
 };
 
-export const forceLogout = async (
-	targetId: string,
-	actor: Actor & { isSuperAdmin: boolean },
-	ctx: Ctx,
-) => {
+export const forceLogout = async (targetId: string, actor: AdminActor, ctx: Ctx) => {
 	const target = await prisma.user.findFirst({ where: { id: targetId } });
 	if (!target) throw new ApiError(404, "User not found", [{ code: "NOT_FOUND" }]);
 
@@ -487,10 +480,7 @@ export const dashboardStats = () =>
 	});
 
 /** ADMIN sees their own trail; a super admin sees everybody's. */
-export const auditLogs = async (
-	query: AuditLogsQuery,
-	actor: Actor & { isSuperAdmin: boolean },
-) => {
+export const auditLogs = async (query: AuditLogsQuery, actor: AdminActor) => {
 	const pagination = getPagination(query);
 	const created = dateRange(query.from, query.to);
 

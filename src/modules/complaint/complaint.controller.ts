@@ -1,9 +1,9 @@
 import type { Request, Response } from "express";
 import { requireUser } from "@/middlewares/auth.js";
 import { validatedParams, validatedQuery } from "@/middlewares/validateRequest.js";
-import type { Actor } from "@/modules/complaint/complaint.service.js";
 import * as ComplaintService from "@/modules/complaint/complaint.service.js";
 import type { ListComplaintsQuery } from "@/modules/complaint/complaint.validation.js";
+import type { Actor } from "@/types/actor.js";
 import { ApiError } from "@/utils/ApiError.js";
 import { catchAsync } from "@/utils/catchAsync.js";
 import { toCtx } from "@/utils/context.js";

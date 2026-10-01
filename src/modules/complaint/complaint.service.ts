@@ -1,6 +1,6 @@
 import { uploadBuffer } from "@/config/cloudinary.js";
 import type { Prisma } from "@/generated/prisma/client.js";
-import type { ComplaintStatus, Role } from "@/generated/prisma/enums.js";
+import type { ComplaintStatus } from "@/generated/prisma/enums.js";
 import { sendStatusUpdateEmail } from "@/lib/mailer.js";
 import { prisma } from "@/lib/prisma.js";
 import { getSetting } from "@/lib/settings.js";
@@ -14,6 +14,7 @@ import {
 	transitions,
 	UPVOTES_FOR_PRIORITY_BUMP,
 } from "@/modules/complaint/complaint.constants.js";
+import type { AccessRow } from "@/modules/complaint/complaint.types.js";
 import type {
 	AssignInput,
 	CommentInput,
@@ -23,6 +24,7 @@ import type {
 	UpdateComplaintInput,
 } from "@/modules/complaint/complaint.validation.js";
 import { dispatchEmail, notify } from "@/modules/notification/notification.service.js";
+import type { Actor } from "@/types/actor.js";
 import { ApiError } from "@/utils/ApiError.js";
 import { AUDIT_ACTIONS, audit } from "@/utils/auditLogger.js";
 import type { Ctx } from "@/utils/context.js";
@@ -30,14 +32,6 @@ import { toAuditCtx } from "@/utils/context.js";
 import { buildMeta, getPagination } from "@/utils/pagination.js";
 import { buildOrderBy, csv, dateRange } from "@/utils/queryBuilder.js";
 import { nextTrackingId } from "@/utils/trackingId.js";
-
-export type Actor = {
-	id: string;
-	role: Role;
-	departmentId: string | null;
-	email: string;
-	name: string;
-};
 
 const LIST_SELECT = {
 	id: true,
@@ -69,8 +63,6 @@ const DETAIL_INCLUDE = {
 // ---------------------------------------------------------------------------
 // access helpers — the second layer, after the role guard on the route
 // ---------------------------------------------------------------------------
-
-type AccessRow = { citizenId: string; officerId: string | null; categoryId: string };
 
 const assertCanRead = async (complaint: AccessRow, actor: Actor): Promise<void> => {
 	if (actor.role === "ADMIN") return;

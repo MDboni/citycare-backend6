@@ -19,6 +19,7 @@ const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) })
 const SALT_ROUNDS = Number(process.env.BCRYPT_SALT_ROUNDS ?? 12);
 const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL ?? "admin@citycare.com";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? "Admin@12345";
+const DEMO_ADMIN_EMAIL = process.env.DEMO_ADMIN_EMAIL ?? "admin@courier.com";
 
 const hash = (plain: string) => bcrypt.hash(plain, SALT_ROUNDS);
 
@@ -205,6 +206,24 @@ const main = async () => {
 	const superAdmin = await upsertUser(SUPER_ADMIN_EMAIL, {
 		name: "CityCare Super Admin",
 		email: SUPER_ADMIN_EMAIL,
+		password: await hash(ADMIN_PASSWORD),
+		role: "ADMIN",
+		isSuperAdmin: true,
+		twoFactorEnabled: false,
+		emailVerifiedAt: new Date(),
+	});
+
+	/**
+	 * A second super admin, under the address the assignment submission quotes.
+	 *
+	 * It exists so the credentials handed to a reviewer work on the first try
+	 * rather than on the second guess. Same rights as the one above, same
+	 * two-factor-off so a single click lands on a dashboard, and seeded here
+	 * because this file is the only place allowed to set `isSuperAdmin`.
+	 */
+	await upsertUser(DEMO_ADMIN_EMAIL, {
+		name: "CityCare Demo Admin",
+		email: DEMO_ADMIN_EMAIL,
 		password: await hash(ADMIN_PASSWORD),
 		role: "ADMIN",
 		isSuperAdmin: true,
@@ -406,6 +425,7 @@ const main = async () => {
 Seed complete.
 
   Super admin  ${SUPER_ADMIN_EMAIL} / ${ADMIN_PASSWORD}   (2FA off)
+  Super admin  ${DEMO_ADMIN_EMAIL} / ${ADMIN_PASSWORD}   (2FA off)
   Officers     officer1@citycare.com … officer3@citycare.com / Officer@12345   (2FA off)
   Citizens     citizen1@citycare.com … citizen5@citycare.com / Citizen@12345
                citizen1 has 2FA off; citizen2-5 need an email OTP
